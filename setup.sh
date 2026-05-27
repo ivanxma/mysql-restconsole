@@ -75,6 +75,9 @@ existing_runtime_value() {
 
 write_runtime_env() {
   if [[ -z "$CONFIGDB_PASSWORD" ]]; then
+    CONFIGDB_PASSWORD="$(existing_runtime_value MRS_CONSOLE_CONFIGDB_PASSWORD)"
+  fi
+  if [[ -z "$CONFIGDB_PASSWORD" ]]; then
     CONFIGDB_PASSWORD="$(openssl rand -base64 32 | tr -d '\n')"
   fi
   local saved_deploy_mode="$DEPLOY_MODE"
