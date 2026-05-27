@@ -211,7 +211,7 @@ WorkingDirectory=${APP_DIR}
 Environment=APP_ADDRESS=${APP_HOST}
 Environment=APP_PORT=${port}
 $(if [[ "$mode" == "https" ]]; then printf 'Environment=TLS_CERT=%s\nEnvironment=TLS_KEY=%s\n' "$TLS_CERT" "$TLS_KEY"; fi)
-ExecStart=${APP_DIR}/${start_script}
+ExecStart=/usr/bin/bash ${APP_DIR}/${start_script}
 Restart=on-failure
 User=${SERVICE_USER}
 Group=${SERVICE_GROUP}
