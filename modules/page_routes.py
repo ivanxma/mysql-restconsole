@@ -7,7 +7,20 @@ from flask import Flask, flash, jsonify, redirect, render_template, request, ses
 
 from modules.catalog import OBJECT_PRIVILEGES, PAGE_CONTENT, USER_TABS, GRANT_TABS, RESTAPIDB_TABS
 from modules.app_config import active_login_profile, default_login_profile
-from modules.profile_store import can_manage_profiles, get_profile, profile_names, update_profile
+from modules.local_auth import (
+    add_user_to_group,
+    authenticate_local_user,
+    assign_profile,
+    assigned_profile_names,
+    change_local_password,
+    create_local_group,
+    create_local_user,
+    list_local_groups,
+    list_local_users,
+    list_profile_assignments,
+    list_user_group_memberships,
+)
+from modules.profile_store import LOCAL_ADMIN_PROFILE_NAME, get_profile, profile_names, update_profile
 from modules.update_service import poll_token_matches, read_update_status, start_update_job
 from modules.services import (
     classify_role,
@@ -100,6 +113,23 @@ def _build_config_profile(form_data) -> dict[str, Any]:
         "ssh_jump_host": str(form_data.get("ssh_jump_host", "")).strip(),
         "ssh_jump_user": str(form_data.get("ssh_jump_user", "")).strip(),
     }
+
+
+def _visible_connection_profiles_for_login(user: dict[str, Any]) -> list[dict[str, str]]:
+    public_profiles = [item for item in profile_names() if item["name"] != LOCAL_ADMIN_PROFILE_NAME]
+    if user["role"] == "admin":
+        return public_profiles
+    assigned_names = assigned_profile_names(user["username"])
+    return [item for item in public_profiles if item["name"] in assigned_names]
+
+
+def _editable_connection_profiles() -> list[dict[str, str]]:
+    return [item for item in profile_names() if item["name"] != LOCAL_ADMIN_PROFILE_NAME]
+
+
+def _default_editable_profile_name() -> str:
+    editable_profiles = _editable_connection_profiles()
+    return editable_profiles[0]["name"] if editable_profiles else "default"
 
 
 def _parse_grant_entry(grant: str) -> dict[str, str]:
@@ -204,11 +234,29 @@ def _dashboard_context_for_admin(slug: str) -> dict[str, Any]:
     restapidb_objects = {"tables": [], "views": [], "procedures": []}
     rest_services: list[dict[str, Any]] = []
     config_profile_name = request.args.get("profile", "").strip()
+    if slug == "config" and config_profile_name == LOCAL_ADMIN_PROFILE_NAME:
+        config_profile_name = ""
+    if slug == "config" and not config_profile_name:
+        config_profile_name = _default_editable_profile_name()
     config_profile = get_profile(config_profile_name)
+    local_users = []
+    local_groups = []
+    user_group_memberships = []
+    profile_assignments = []
 
     if slug == "config":
         active_tab = ""
         config_profile_name = config_profile["name"]
+        local_users = list_local_users()
+        local_groups = list_local_groups()
+        user_group_memberships = list_user_group_memberships()
+        profile_assignments = list_profile_assignments()
+    if slug == "local-users":
+        local_users = list_local_users()
+    if slug == "local-groups":
+        local_groups = list_local_groups()
+        local_users = list_local_users()
+        user_group_memberships = list_user_group_memberships()
 
     if slug == "user":
         managed_users = list_users_with_roles()
@@ -252,9 +300,14 @@ def _dashboard_context_for_admin(slug: str) -> dict[str, Any]:
         "active_special_priv_category": special_priv_category,
         "restapidb_objects": restapidb_objects,
         "rest_services": rest_services,
-        "config_profiles": profile_names(),
+        "config_profiles": _visible_connection_profiles_for_login(current_user() or {"role": "admin", "username": ""}),
+        "editable_config_profiles": _editable_connection_profiles(),
         "config_profile": config_profile,
         "config_profile_name": config_profile_name,
+        "local_users": local_users,
+        "local_groups": local_groups,
+        "user_group_memberships": user_group_memberships,
+        "profile_assignments": profile_assignments,
     }
 
 
@@ -380,11 +433,10 @@ def register_routes(app: Flask) -> None:
         user = current_user()
         if not user or user["role"] != "admin":
             return redirect(url_for("login"))
-        if not can_manage_profiles(session.get("connection_profile", {})):
-            flash("Profile management requires local-admin-profile.", "error")
-            return redirect(url_for("dashboard", slug=role_home(user["role"])))
-
         profile_name = request.form.get("profile_name", "").strip() or "default"
+        if profile_name == LOCAL_ADMIN_PROFILE_NAME:
+            flash("The local admin socket profile is managed by setup and cannot be edited here.", "error")
+            return redirect(url_for("dashboard", slug="config"))
         try:
             updated = update_profile(profile_name, _build_config_profile(request.form))
             if session.get("connection_profile", {}).get("name") == updated["name"]:
@@ -393,6 +445,80 @@ def register_routes(app: Flask) -> None:
         except Exception as exc:
             flash(f"Configuration update failed: {exc}", "error")
         return redirect(url_for("dashboard", slug="config", profile=profile_name))
+
+    @app.post("/admin/local-users/create")
+    def admin_create_local_user():
+        user = current_user()
+        if not user or user["role"] != "admin":
+            return redirect(url_for("login"))
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
+        display_name = request.form.get("display_name", "").strip()
+        is_admin = request.form.get("is_admin") == "on"
+        if not username or not password:
+            flash("Username and temporary password are required.", "error")
+        else:
+            try:
+                create_local_user(username, password, is_admin=is_admin, display_name=display_name)
+                flash(f"Created local user {username}.", "info")
+            except Exception as exc:
+                flash(f"Local user creation failed: {exc}", "error")
+        return redirect(url_for("dashboard", slug="local-users"))
+
+    @app.post("/admin/local-groups/create")
+    def admin_create_local_group():
+        user = current_user()
+        if not user or user["role"] != "admin":
+            return redirect(url_for("login"))
+        group_name = request.form.get("group_name", "").strip()
+        display_name = request.form.get("display_name", "").strip()
+        is_admin = request.form.get("is_admin") == "on"
+        if not group_name:
+            flash("Group name is required.", "error")
+        else:
+            try:
+                create_local_group(group_name, is_admin=is_admin, display_name=display_name)
+                flash(f"Saved local group {group_name}.", "info")
+            except Exception as exc:
+                flash(f"Local group save failed: {exc}", "error")
+        return redirect(url_for("dashboard", slug="local-groups"))
+
+    @app.post("/admin/local-groups/add-user")
+    def admin_add_user_to_group():
+        user = current_user()
+        if not user or user["role"] != "admin":
+            return redirect(url_for("login"))
+        username = request.form.get("username", "").strip()
+        group_name = request.form.get("group_name", "").strip()
+        if not username or not group_name:
+            flash("User and group are required.", "error")
+        else:
+            try:
+                add_user_to_group(username, group_name)
+                flash(f"Added {username} to {group_name}.", "info")
+            except Exception as exc:
+                flash(f"Group assignment failed: {exc}", "error")
+        return redirect(url_for("dashboard", slug="local-groups"))
+
+    @app.post("/admin/profile-assignments/create")
+    def admin_assign_profile():
+        user = current_user()
+        if not user or user["role"] != "admin":
+            return redirect(url_for("login"))
+        profile_name = request.form.get("profile_name", "").strip()
+        subject_type = request.form.get("subject_type", "").strip()
+        subject_name = request.form.get("subject_name", "").strip()
+        if not profile_name or not subject_type or not subject_name:
+            flash("Profile assignment requires profile, target type, and target name.", "error")
+        elif profile_name == LOCAL_ADMIN_PROFILE_NAME:
+            flash("The local admin profile cannot be assigned for second-level profile login.", "error")
+        else:
+            try:
+                assign_profile(profile_name, subject_type, subject_name)
+                flash(f"Assigned {profile_name} to {subject_type} {subject_name}.", "info")
+            except Exception as exc:
+                flash(f"Profile assignment failed: {exc}", "error")
+        return redirect(url_for("dashboard", slug="config"))
 
     @app.post("/admin/update/start")
     def admin_start_update():
@@ -842,60 +968,82 @@ def register_routes(app: Flask) -> None:
         if request.method == "POST":
             username = request.form.get("username", "").strip()
             password = request.form.get("password", "")
-            try:
-                login_profile = _build_login_profile(request.form)
-            except Exception as exc:
-                return render_template(
-                    "login.html",
-                    login_error=str(exc),
-                    login_username=username,
-                    login_profile=active_login_profile(),
-                )
-
             if not username or not password:
                 return render_template(
                     "login.html",
                     login_error="Enter both username and password.",
                     login_username=username,
-                    login_profile=login_profile,
                 )
+            local_user = authenticate_local_user(username, password)
+            if not local_user:
+                return render_template("login.html", login_error="Login failed.", login_username=username)
+            role = "admin" if local_user["is_admin"] else "local_user"
+            session["username"] = username
+            session["role"] = role
+            session["initials"] = infer_initials(username)
+            session["grants"] = []
+            session["local_login_complete"] = True
+            session["tunnels_ready"] = True
+            if local_user.get("force_password_change"):
+                session["force_password_change"] = True
+                return redirect(url_for("change_password"))
+            return redirect(url_for("dashboard", slug=role_home(role)))
 
+        return render_template("login.html")
+
+    @app.route("/change-password", methods=["GET", "POST"])
+    def change_password():
+        user = current_user()
+        if not user:
+            return redirect(url_for("login"))
+        if request.method == "POST":
+            password = request.form.get("password", "")
+            confirm = request.form.get("confirm_password", "")
+            if not password or password != confirm:
+                flash("Password confirmation does not match.", "error")
+            else:
+                try:
+                    change_local_password(user["username"], password)
+                    session.clear()
+                    flash("Password changed. Sign in again.", "info")
+                    return redirect(url_for("login"))
+                except Exception as exc:
+                    flash(f"Password change failed: {exc}", "error")
+        return render_template("login.html", force_password_change=True, login_username=user["username"])
+
+    @app.post("/profiles/login")
+    def profile_login():
+        user = current_user()
+        if not user:
+            return redirect(url_for("login"))
+        profile_name = request.form.get("profile_name", "").strip()
+        username = request.form.get("db_username", "").strip()
+        password = request.form.get("db_password", "")
+        if not profile_name or not username or not password:
+            flash("Profile, DB username, and DB password are required.", "error")
+            return redirect(url_for("dashboard", slug="profile-login"))
+        if user["role"] != "admin" and profile_name not in assigned_profile_names(user["username"]):
+            flash("That profile is not assigned to your user or group.", "error")
+            return redirect(url_for("dashboard", slug="profile-login"))
+        try:
+            login_profile = _build_login_profile({"profile_name": profile_name})
             previous_profile = session.get("connection_profile")
             if previous_profile and previous_profile != login_profile:
                 stop_all_shared_tunnels()
             session["connection_profile"] = login_profile
-            try:
-                if login_profile.get("use_ssh_tunnel"):
-                    start_shared_tunnels()
-                ensure_login_tunnels()
-                grants = fetch_grants(username, password)
-                used_fallback = False
-            except Exception as exc:
-                fallback_role = fallback_user_role(username, password)
-                if fallback_role is None:
-                    stop_all_shared_tunnels()
-                    return render_template(
-                        "login.html",
-                        login_error=f"Login failed: {exc}",
-                        login_username=username,
-                        login_profile=login_profile,
-                    )
-                role = fallback_role
-                grants = [f"Fallback role mapping applied for {username}"]
-                used_fallback = True
-
-            if not used_fallback:
-                role = classify_role(username, grants)
-            session["username"] = username
-            session["role"] = role
-            session["initials"] = infer_initials(username)
+            if login_profile.get("use_ssh_tunnel"):
+                start_shared_tunnels()
+            ensure_login_tunnels()
+            grants = fetch_grants(username, password)
+            db_role = classify_role(username, grants)
+            session["db_username"] = username
+            session["db_role"] = db_role
+            session["role"] = db_role if user["role"] != "admin" else "admin"
             session["grants"] = grants
-            session["tunnels_ready"] = True
-            if used_fallback:
-                session["login_notice"] = "DB grant lookup timed out. Applied the configured sample-user role mapping for this session."
-            return redirect(url_for("dashboard", slug=role_home(role)))
-
-        return render_template("login.html", login_profile=active_login_profile())
+            flash(f"Connected to profile {login_profile['label']}.", "info")
+        except Exception as exc:
+            flash(f"Profile login failed: {exc}", "error")
+        return redirect(url_for("dashboard", slug="profile-login"))
 
     @app.route("/logout", methods=["POST"])
     def logout():
@@ -986,11 +1134,16 @@ def register_routes(app: Flask) -> None:
             },
             "sys_procedures": [],
             "selected_service_path": "",
-            "config_profiles": profile_names(),
-            "config_profile": get_profile(),
-            "config_profile_name": get_profile()["name"],
+            "config_profiles": _visible_connection_profiles_for_login(user),
+            "editable_config_profiles": _editable_connection_profiles(),
+            "config_profile": get_profile(_default_editable_profile_name()),
+            "config_profile_name": _default_editable_profile_name(),
             "update_status": read_update_status(),
             "update_poll_token": session.get("update_poll_token", ""),
+            "local_users": [],
+            "local_groups": [],
+            "user_group_memberships": [],
+            "profile_assignments": [],
         }
 
         if user["role"] == "admin":

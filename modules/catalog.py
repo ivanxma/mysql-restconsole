@@ -3,17 +3,22 @@ from __future__ import annotations
 
 ROLE_LABELS = {
     "admin": "Admin",
+    "local_user": "General User",
     "rest_admin": "Rest Admin",
     "test_user": "Test User",
 }
 
 ROLE_MENUS = {
     "admin": [
-        {"slug": "user", "label": "User"},
-        {"slug": "granting-privileges", "label": "Granting Privileges"},
-        {"slug": "restapidb", "label": "RestAPIDB"},
+        {"slug": "local-users", "label": "User Management"},
+        {"slug": "local-groups", "label": "Group Management"},
         {"slug": "config", "label": "Profiles"},
+        {"slug": "profile-login", "label": "Profile Login"},
         {"slug": "update", "label": "Update"},
+        {"slug": "show-grants", "label": "Show Grants"},
+    ],
+    "local_user": [
+        {"slug": "profile-login", "label": "Profile Login"},
         {"slug": "show-grants", "label": "Show Grants"},
     ],
     "rest_admin": [
@@ -31,6 +36,33 @@ ROLE_MENUS = {
 }
 
 PAGE_CONTENT = {
+    "local-users": {
+        "title": "User Management",
+        "summary": "Create local users in embedded configdb and assign them to groups or profiles.",
+        "items": [
+            "Local users authenticate to the console first.",
+            "Database credentials are entered only during second-level profile login.",
+            "New local users are forced to change their password on first login.",
+        ],
+    },
+    "local-groups": {
+        "title": "Group Management",
+        "summary": "Manage local Admin and General User groups for profile assignment.",
+        "items": [
+            "Admin groups manage local users, groups, and profiles.",
+            "General User groups can only use assigned DB profiles.",
+            "Profiles can be assigned to users or groups.",
+        ],
+    },
+    "profile-login": {
+        "title": "Profile Login",
+        "summary": "Choose an assigned DB connection profile and complete second-level MySQL/MRS login.",
+        "items": [
+            "The first login authenticates to embedded configdb.",
+            "The second login authenticates to the selected target DB profile.",
+            "Only assigned profiles are available to general users.",
+        ],
+    },
     "config": {
         "title": "Profiles",
         "summary": "Define MySQL database endpoints, MySQL REST Service endpoints, and optional SSH tunnel profiles.",

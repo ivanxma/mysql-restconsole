@@ -2,13 +2,17 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
 from typing import Any
 
+import mysql.connector
 
-PROFILE_FILE = Path(os.getenv("MRS_CONSOLE_PROFILE_FILE", "profiles.json"))
+
 LOCAL_ADMIN_PROFILE_NAME = os.getenv("LOCAL_MYSQL_PROFILE_NAME", "local-admin-profile")
 LOCAL_ADMIN_SOCKET = os.getenv("LOCAL_MYSQL_SOCKET", ".data/run/mysql.sock")
+CONFIGDB_NAME = os.getenv("MRS_CONSOLE_CONFIGDB_NAME", "configdb")
+CONFIGDB_USER = os.getenv("MRS_CONSOLE_CONFIGDB_USER", "")
+CONFIGDB_PASSWORD = os.getenv("MRS_CONSOLE_CONFIGDB_PASSWORD", "")
+CONFIGDB_SOCKET = os.getenv("MRS_CONSOLE_CONFIGDB_SOCKET", LOCAL_ADMIN_SOCKET)
 
 
 DEFAULT_PROFILE = {
@@ -31,7 +35,7 @@ LOCAL_ADMIN_PROFILE = {
     "label": "Local Admin Profile",
     "mode": "socket",
     "socket": LOCAL_ADMIN_SOCKET,
-    "database": os.getenv("LOCAL_MYSQL_DATABASE", "mysql"),
+    "database": "mysql",
     "default_username": os.getenv("LOCAL_MYSQL_ADMIN_USER", "localadmin"),
     "profile_management": True,
     "force_password_change": True,
@@ -52,9 +56,8 @@ def _normalize_profile(raw: dict[str, Any], fallback_name: str = "default") -> d
     if str((raw or {}).get("mode", "")).strip() == "socket":
         profile = dict(LOCAL_ADMIN_PROFILE)
         profile.update(raw or {})
-        name = str(profile.get("name") or fallback_name).strip() or fallback_name
-        profile["name"] = name
-        profile["label"] = str(profile.get("label") or name).strip()
+        profile["name"] = str(profile.get("name") or fallback_name).strip() or fallback_name
+        profile["label"] = str(profile.get("label") or profile["name"]).strip()
         profile["mode"] = "socket"
         profile["socket"] = str(profile.get("socket") or LOCAL_ADMIN_SOCKET).strip()
         profile["database"] = str(profile.get("database") or "mysql").strip()
@@ -65,9 +68,8 @@ def _normalize_profile(raw: dict[str, Any], fallback_name: str = "default") -> d
 
     profile = dict(DEFAULT_PROFILE)
     profile.update(raw or {})
-    name = str(profile.get("name") or fallback_name).strip() or fallback_name
-    profile["name"] = name
-    profile["label"] = str(profile.get("label") or name).strip()
+    profile["name"] = str(profile.get("name") or fallback_name).strip() or fallback_name
+    profile["label"] = str(profile.get("label") or profile["name"]).strip()
     profile["use_ssh_tunnel"] = bool(profile.get("use_ssh_tunnel"))
     profile["db_host"] = str(profile.get("db_host") or DEFAULT_PROFILE["db_host"]).strip()
     profile["api_host"] = str(profile.get("api_host") or profile["db_host"]).strip()
@@ -81,31 +83,88 @@ def _normalize_profile(raw: dict[str, Any], fallback_name: str = "default") -> d
     return profile
 
 
+def _fallback_profiles() -> list[dict[str, Any]]:
+    return [_normalize_profile(LOCAL_ADMIN_PROFILE), _normalize_profile(DEFAULT_PROFILE)]
+
+
+def _configdb_connection():
+    if not CONFIGDB_USER or not CONFIGDB_PASSWORD:
+        raise RuntimeError("configdb credentials are not configured in the runtime environment.")
+    socket_path = CONFIGDB_SOCKET
+    if not socket_path.startswith("/"):
+        socket_path = os.path.abspath(socket_path)
+    return mysql.connector.connect(
+        unix_socket=socket_path,
+        user=CONFIGDB_USER,
+        password=CONFIGDB_PASSWORD,
+        database=CONFIGDB_NAME,
+        autocommit=True,
+    )
+
+
+def _ensure_schema(connection) -> None:
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS connection_profiles (
+                name VARCHAR(128) PRIMARY KEY,
+                label VARCHAR(255) NOT NULL,
+                profile_json JSON NOT NULL,
+                profile_management BOOLEAN NOT NULL DEFAULT FALSE,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            )
+            """
+        )
+
+
 def load_profiles() -> list[dict[str, Any]]:
-    if not PROFILE_FILE.exists():
-        return [_normalize_profile(LOCAL_ADMIN_PROFILE), _normalize_profile(DEFAULT_PROFILE)]
     try:
-        payload = json.loads(PROFILE_FILE.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return [_normalize_profile(LOCAL_ADMIN_PROFILE), _normalize_profile(DEFAULT_PROFILE)]
-    raw_profiles = payload.get("profiles", []) if isinstance(payload, dict) else []
-    profiles = [
-        _normalize_profile(item, fallback_name=f"profile-{index}")
-        for index, item in enumerate(raw_profiles, start=1)
-        if isinstance(item, dict)
-    ]
+        connection = _configdb_connection()
+        _ensure_schema(connection)
+        with connection.cursor(dictionary=True) as cursor:
+            cursor.execute("SELECT profile_json FROM connection_profiles ORDER BY profile_management DESC, name")
+            profiles = []
+            for row in cursor.fetchall():
+                value = row["profile_json"]
+                if isinstance(value, str):
+                    payload = json.loads(value)
+                else:
+                    payload = value
+                if isinstance(payload, dict):
+                    profiles.append(_normalize_profile(payload, fallback_name=str(payload.get("name", ""))))
+        connection.close()
+    except Exception:
+        return _fallback_profiles()
     if not any(item.get("name") == LOCAL_ADMIN_PROFILE_NAME for item in profiles):
         profiles.insert(0, _normalize_profile(LOCAL_ADMIN_PROFILE))
-    return profiles or [_normalize_profile(LOCAL_ADMIN_PROFILE), _normalize_profile(DEFAULT_PROFILE)]
+    if not any(item.get("name") != LOCAL_ADMIN_PROFILE_NAME for item in profiles):
+        profiles.append(_normalize_profile(DEFAULT_PROFILE))
+    return profiles or _fallback_profiles()
 
 
 def save_profiles(profiles: list[dict[str, Any]]) -> None:
-    normalized = [_normalize_profile(item, fallback_name=f"profile-{index}") for index, item in enumerate(profiles, start=1)]
-    PROFILE_FILE.write_text(json.dumps({"profiles": normalized}, indent=2) + "\n", encoding="utf-8")
-    try:
-        PROFILE_FILE.chmod(0o600)
-    except OSError:
-        pass
+    connection = _configdb_connection()
+    _ensure_schema(connection)
+    with connection.cursor() as cursor:
+        for profile in profiles:
+            normalized = _normalize_profile(profile, fallback_name=str(profile.get("name", "default")))
+            cursor.execute(
+                """
+                INSERT INTO connection_profiles (name, label, profile_json, profile_management)
+                VALUES (%s, %s, %s, %s)
+                ON DUPLICATE KEY UPDATE
+                    label = VALUES(label),
+                    profile_json = VALUES(profile_json),
+                    profile_management = VALUES(profile_management)
+                """,
+                (
+                    normalized["name"],
+                    normalized["label"],
+                    json.dumps(normalized, sort_keys=True),
+                    bool(normalized.get("profile_management")),
+                ),
+            )
+    connection.close()
 
 
 def can_manage_profiles(active_profile: dict[str, Any] | None) -> bool:
@@ -133,16 +192,13 @@ def get_profile(name: str | None = None) -> dict[str, Any]:
 def update_profile(name: str, updates: dict[str, Any]) -> dict[str, Any]:
     selected = str(name or "").strip() or "default"
     profiles = load_profiles()
-    found = False
-    updated_profile: dict[str, Any] | None = None
     for index, profile in enumerate(profiles):
         if profile["name"] == selected:
-            updated_profile = _normalize_profile({**profile, **updates, "name": selected}, fallback_name=selected)
-            profiles[index] = updated_profile
-            found = True
-            break
-    if not found:
-        updated_profile = _normalize_profile({**updates, "name": selected}, fallback_name=selected)
-        profiles.append(updated_profile)
+            updated = _normalize_profile({**profile, **updates, "name": selected}, fallback_name=selected)
+            profiles[index] = updated
+            save_profiles(profiles)
+            return dict(updated)
+    updated = _normalize_profile({**updates, "name": selected}, fallback_name=selected)
+    profiles.append(updated)
     save_profiles(profiles)
-    return dict(updated_profile)
+    return dict(updated)

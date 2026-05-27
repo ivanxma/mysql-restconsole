@@ -11,25 +11,21 @@
       </div>
     </div>
     <div class="intro-copy">
-      <p class="eyebrow">MRS Control Surface</p>
-      <h2>Role-Aware MySQL REST Service Console</h2>
+        <p class="eyebrow">MRS Control Surface</p>
+      <h2>Local Console Login</h2>
       <p>
-        Sign in with your MySQL account. The application classifies each session as
-        Admin, Rest Admin, or Test User from the grants returned by the target database.
+        Sign in with your local console account first. After login, choose an assigned
+        database profile and complete the second-level MySQL login.
       </p>
     </div>
     <div class="login-legend">
       <div class="legend-card">
         <span>Admin</span>
-        <p>Users, privilege grants, and RestAPIDB governance.</p>
+        <p>Local users, groups, profiles, and configdb governance.</p>
       </div>
       <div class="legend-card">
-        <span>Rest Admin</span>
-        <p>Create services and expose databases, tables, or stored procedures.</p>
-      </div>
-      <div class="legend-card">
-        <span>Test User</span>
-        <p>List services and test protected or public REST endpoints.</p>
+        <span>General User</span>
+        <p>Use assigned profiles for second-level DB access.</p>
       </div>
     </div>
   </div>
@@ -38,8 +34,8 @@
     <form class="login-card" method="post">
       <div class="login-card-head">
         <p class="eyebrow">Sign In</p>
-        <h3>Database Authentication</h3>
-        <p class="login-subcopy">Use the target MySQL account you want the app to classify.</p>
+        <h3>{% if force_password_change %}Change Password{% else %}Local Authentication{% endif %}</h3>
+        <p class="login-subcopy">{% if force_password_change %}Set a new local password, then sign in again.{% else %}Default bootstrap account is localadmin / localadmin.{% endif %}</p>
       </div>
       {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
@@ -51,33 +47,27 @@
       {% if login_error %}
       <div class="inline-message inline-message-error">{{ login_error }}</div>
       {% endif %}
+      {% if force_password_change %}
+      <label class="field">
+        <span>New Password</span>
+        <input type="password" name="password" autocomplete="new-password" required>
+      </label>
+      <label class="field">
+        <span>Confirm Password</span>
+        <input type="password" name="confirm_password" autocomplete="new-password" required>
+      </label>
+      <button class="primary-button" type="submit">Change Password</button>
+      {% else %}
       <label class="field">
         <span>Username</span>
-        <input type="text" name="username" placeholder="admin-rest" autocomplete="username" value="{{ login_username or '' }}" required>
+        <input type="text" name="username" placeholder="localadmin" autocomplete="username" value="{{ login_username or '' }}" required>
       </label>
       <label class="field">
         <span>Password</span>
         <input type="password" name="password" placeholder="••••••••" autocomplete="current-password" required>
       </label>
-      <section class="subsection-card login-subsection">
-        <div class="panel-head">
-          <div>
-            <h4>Connection Profile</h4>
-            <p class="panel-copy">Choose the saved DB and REST endpoint definition for this session.</p>
-          </div>
-        </div>
-        <div class="form-grid">
-          <label class="field">
-            <span>Profile</span>
-            <select name="profile_name">
-              {% for item in login_profiles %}
-              <option value="{{ item.name }}" {% if login_profile.name == item.name %}selected{% endif %}>{{ item.label }}</option>
-              {% endfor %}
-            </select>
-          </label>
-        </div>
-      </section>
       <button class="primary-button" type="submit">Login</button>
+      {% endif %}
     </form>
   </div>
 </section>

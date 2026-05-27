@@ -34,7 +34,123 @@
   </div>
 </section>
 
-{% if active_slug == "config" %}
+{% if active_slug == "local-users" %}
+<section class="panel">
+  <div class="panel-head"><div><h4>Local Users</h4><p class="panel-copy">Users are stored in embedded MySQL configdb.</p></div></div>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead><tr><th>User</th><th>Name</th><th>Role</th><th>First Login</th><th>Status</th></tr></thead>
+      <tbody>
+        {% for local_user in local_users %}
+        <tr>
+          <td>{{ local_user.username }}</td>
+          <td>{{ local_user.display_name }}</td>
+          <td>{{ 'Admin' if local_user.is_admin else 'General User' }}</td>
+          <td>{{ 'Change required' if local_user.force_password_change else 'Complete' }}</td>
+          <td>{{ 'Active' if local_user.active else 'Disabled' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <form class="stack-form" action="{{ url_for('admin_create_local_user') }}" method="post">
+    <div class="form-grid">
+      <label class="field"><span>Username</span><input type="text" name="username" required></label>
+      <label class="field"><span>Display Name</span><input type="text" name="display_name"></label>
+      <label class="field"><span>Temporary Password</span><input type="password" name="password" required></label>
+      <label class="toggle-field"><input type="checkbox" name="is_admin"><span>Admin user</span></label>
+    </div>
+    <button class="primary-button" type="submit">Create Local User</button>
+  </form>
+</section>
+{% elif active_slug == "local-groups" %}
+<section class="panel">
+  <div class="panel-head"><div><h4>Local Groups</h4><p class="panel-copy">Admin groups manage embedded config; General User groups use assigned profiles.</p></div></div>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead><tr><th>Group</th><th>Name</th><th>Type</th></tr></thead>
+      <tbody>
+        {% for local_group in local_groups %}
+        <tr>
+          <td>{{ local_group.group_name }}</td>
+          <td>{{ local_group.display_name }}</td>
+          <td>{{ 'Admin' if local_group.is_admin else 'General User' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <form class="stack-form" action="{{ url_for('admin_create_local_group') }}" method="post">
+    <div class="form-grid">
+      <label class="field"><span>Group Name</span><input type="text" name="group_name" required></label>
+      <label class="field"><span>Display Name</span><input type="text" name="display_name"></label>
+      <label class="toggle-field"><input type="checkbox" name="is_admin"><span>Admin group</span></label>
+    </div>
+    <button class="primary-button" type="submit">Save Group</button>
+  </form>
+  <section class="subsection-card">
+    <div class="panel-head"><div><h4>Group Membership</h4><p class="panel-copy">Add local users to Admin or General User groups.</p></div></div>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead><tr><th>Group</th><th>User</th><th>Type</th></tr></thead>
+        <tbody>
+          {% for membership in user_group_memberships %}
+          <tr>
+            <td>{{ membership.group_name }}</td>
+            <td>{{ membership.username }}</td>
+            <td>{{ 'Admin' if membership.is_admin else 'General User' }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="3">No group memberships have been created.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <form class="stack-form" action="{{ url_for('admin_add_user_to_group') }}" method="post">
+      <div class="form-grid">
+        <label class="field">
+          <span>User</span>
+          <select name="username" required>
+            {% for local_user in local_users %}
+            <option value="{{ local_user.username }}">{{ local_user.username }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="field">
+          <span>Group</span>
+          <select name="group_name" required>
+            {% for local_group in local_groups %}
+            <option value="{{ local_group.group_name }}">{{ local_group.group_name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+      </div>
+      <button class="primary-button" type="submit">Add User To Group</button>
+    </form>
+  </section>
+</section>
+{% elif active_slug == "profile-login" %}
+<section class="panel form-panel">
+  <div class="panel-head"><div><h4>Second-Level Profile Login</h4><p class="panel-copy">Choose an assigned profile, then authenticate to that target MySQL/MRS environment.</p></div></div>
+  <form class="stack-form" action="{{ url_for('profile_login') }}" method="post">
+    <div class="form-grid">
+      <label class="field">
+        <span>Profile</span>
+        <select name="profile_name" required>
+          {% for profile_item in config_profiles %}
+          <option value="{{ profile_item.name }}">{{ profile_item.label }}</option>
+          {% else %}
+          <option value="" disabled>No assigned profiles</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="field"><span>DB Username</span><input type="text" name="db_username" autocomplete="username" required></label>
+      <label class="field"><span>DB Password</span><input type="password" name="db_password" autocomplete="current-password" required></label>
+    </div>
+    <button class="primary-button" type="submit" {% if not config_profiles %}disabled{% endif %}>Connect Profile</button>
+  </form>
+</section>
+{% elif active_slug == "config" %}
 <section class="panel form-panel">
   <div class="panel-head">
     <div>
@@ -47,7 +163,7 @@
       <label class="field">
         <span>Profile</span>
         <select name="profile" onchange="this.form.submit()">
-          {% for profile_item in config_profiles %}
+          {% for profile_item in editable_config_profiles %}
           <option value="{{ profile_item.name }}" {% if config_profile_name == profile_item.name %}selected{% endif %}>{{ profile_item.label }}</option>
           {% endfor %}
         </select>
@@ -128,6 +244,61 @@
     </div>
     <button class="primary-button" type="submit">Save Config</button>
   </form>
+  <section class="subsection-card">
+    <div class="panel-head">
+      <div>
+        <h4>Profile Assignments</h4>
+        <p class="panel-copy">Assign DB profiles to local users or groups stored in configdb.</p>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead><tr><th>Profile</th><th>Target Type</th><th>Target</th></tr></thead>
+        <tbody>
+          {% for assignment in profile_assignments %}
+          <tr>
+            <td>{{ assignment.profile_name }}</td>
+            <td>{{ assignment.subject_type }}</td>
+            <td>{{ assignment.subject_name }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="3">No profile assignments have been created.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <form class="stack-form" action="{{ url_for('admin_assign_profile') }}" method="post">
+      <div class="form-grid form-grid-wide">
+        <label class="field">
+          <span>Profile</span>
+          <select name="profile_name" required>
+            {% for profile_item in editable_config_profiles %}
+            <option value="{{ profile_item.name }}">{{ profile_item.label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="field">
+          <span>Target Type</span>
+          <select name="subject_type" id="assignment-subject-type" required>
+            <option value="user">User</option>
+            <option value="group">Group</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Target</span>
+          <select name="subject_name" id="assignment-subject-name" required>
+            {% for local_user in local_users %}
+            <option value="{{ local_user.username }}" data-subject-type="user">{{ local_user.username }}</option>
+            {% endfor %}
+            {% for local_group in local_groups %}
+            <option value="{{ local_group.group_name }}" data-subject-type="group">{{ local_group.group_name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+      </div>
+      <button class="primary-button" type="submit">Assign Profile</button>
+    </form>
+  </section>
 </section>
 <script>
   (() => {
@@ -144,6 +315,28 @@
 
     toggle.addEventListener("change", syncTunnelFields);
     syncTunnelFields();
+  })();
+  (() => {
+    const subjectType = document.getElementById("assignment-subject-type");
+    const subjectName = document.getElementById("assignment-subject-name");
+    if (!subjectType || !subjectName) return;
+
+    function syncAssignmentTargets() {
+      let selectedAvailable = false;
+      for (const option of subjectName.options) {
+        const available = option.dataset.subjectType === subjectType.value;
+        option.hidden = !available;
+        option.disabled = !available;
+        if (available && option.selected) selectedAvailable = true;
+      }
+      if (!selectedAvailable) {
+        const firstAvailable = Array.from(subjectName.options).find((option) => !option.disabled);
+        if (firstAvailable) firstAvailable.selected = true;
+      }
+    }
+
+    subjectType.addEventListener("change", syncAssignmentTargets);
+    syncAssignmentTargets();
   })();
 </script>
 {% elif active_slug == "update" %}

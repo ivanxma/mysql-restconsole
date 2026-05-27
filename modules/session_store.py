@@ -9,10 +9,7 @@ from modules.catalog import GRANT_TABS, RESTAPIDB_TABS, ROLE_LABELS, ROLE_MENUS,
 
 
 def role_menu(role: str) -> list[dict[str, str]]:
-    menu = ROLE_MENUS.get(role, [])
-    if session.get("connection_profile", {}).get("profile_management"):
-        return menu
-    return [item for item in menu if item["slug"] != "config"]
+    return ROLE_MENUS.get(role, [])
 
 
 def admin_subtabs(slug: str) -> list[dict[str, str]]:
@@ -33,6 +30,10 @@ def default_subtab(slug: str) -> str:
 
 
 def role_home(role: str) -> str:
+    if role == "admin":
+        return "local-users"
+    if role == "local_user":
+        return "profile-login"
     menu = role_menu(role)
     return menu[0]["slug"] if menu else ""
 

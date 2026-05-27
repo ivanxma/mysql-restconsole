@@ -17,11 +17,14 @@ PYTHON_BIN="${MRS_CONSOLE_PYTHON_BIN:-}"
 SKIP_PRIVILEGED_SETUP="${SKIP_PRIVILEGED_SETUP:-0}"
 LOCAL_MYSQL_PROFILE_NAME="${LOCAL_MYSQL_PROFILE_NAME:-local-admin-profile}"
 LOCAL_MYSQL_ADMIN_USER="${LOCAL_MYSQL_ADMIN_USER:-localadmin}"
-LOCAL_MYSQL_ADMIN_PASSWORD="${LOCAL_MYSQL_ADMIN_PASSWORD:-}"
+LOCAL_MYSQL_ADMIN_PASSWORD="${LOCAL_MYSQL_ADMIN_PASSWORD:-localadmin}"
 LOCAL_MYSQL_SOCKET="${LOCAL_MYSQL_SOCKET:-${APP_DIR}/.data/run/mysql.sock}"
 LOCAL_MYSQL_DATABASE="${LOCAL_MYSQL_DATABASE:-mysql}"
 MYSQL_SERVER_VERSION="${MRS_CONSOLE_MYSQL_SERVER_VERSION:-9.7.0}"
 MYSQL_SERVER_URL_LINUX_X86="${MRS_CONSOLE_MYSQL_SERVER_URL_LINUX_X86:-}"
+CONFIGDB_NAME="${MRS_CONSOLE_CONFIGDB_NAME:-configdb}"
+CONFIGDB_USER="${MRS_CONSOLE_CONFIGDB_USER:-mysql_rest_console_config}"
+CONFIGDB_PASSWORD="${MRS_CONSOLE_CONFIGDB_PASSWORD:-}"
 
 detect_os_family() {
   if [[ "$(uname -s)" == "Darwin" ]]; then
@@ -63,6 +66,9 @@ select_python() {
 }
 
 write_runtime_env() {
+  if [[ -z "$CONFIGDB_PASSWORD" ]]; then
+    CONFIGDB_PASSWORD="$(openssl rand -base64 32 | tr -d '\n')"
+  fi
   cat > "${APP_DIR}/.runtime.env" <<EOF
 OS_FAMILY=${OS_FAMILY}
 DEPLOY_MODE=${DEPLOY_MODE}
@@ -75,6 +81,11 @@ SERVICE_USER=${SERVICE_USER}
 SERVICE_GROUP=${SERVICE_GROUP}
 MRS_CONSOLE_UPDATE_ALLOWED_BRANCH=${MRS_CONSOLE_UPDATE_ALLOWED_BRANCH:-main}
 MRS_CONSOLE_UPDATE_ALLOWED_REMOTE_URL=${MRS_CONSOLE_UPDATE_ALLOWED_REMOTE_URL:-}
+MRS_CONSOLE_CONFIGDB_NAME=${CONFIGDB_NAME}
+MRS_CONSOLE_CONFIGDB_USER=${CONFIGDB_USER}
+MRS_CONSOLE_CONFIGDB_PASSWORD=${CONFIGDB_PASSWORD}
+MRS_CONSOLE_CONFIGDB_SOCKET=${LOCAL_MYSQL_SOCKET}
+LOCAL_MYSQL_SOCKET=${LOCAL_MYSQL_SOCKET}
 EOF
   chmod 600 "${APP_DIR}/.runtime.env" || true
 }
@@ -105,13 +116,20 @@ install_python_deps() {
 }
 
 setup_local_admin_profile_only() {
-  LOCAL_PROFILE_NAME="$LOCAL_MYSQL_PROFILE_NAME" \
-  LOCAL_MYSQL_SOCKET="${LOCAL_MYSQL_SOCKET#${APP_DIR}/}" \
-  LOCAL_MYSQL_ADMIN_USER="$LOCAL_MYSQL_ADMIN_USER" \
-  LOCAL_MYSQL_DATABASE="$LOCAL_MYSQL_DATABASE" \
-  PROFILE_STORE="profiles.json" \
-  SSH_KEY_DIR="profile_ssh_keys" \
-  "${APP_DIR}/secured_connection_profile_setup.sh"
+  echo "Embedded configdb is not available; using built-in bootstrap profiles only." >&2
+}
+
+start_embedded_mysql_if_needed() {
+  if [[ -S "$LOCAL_MYSQL_SOCKET" ]]; then
+    return
+  fi
+  "${APP_DIR}/.embedded/mysql-server/current/bin/mysqld" --defaults-file="${APP_DIR}/etc/my.cnf" --daemonize
+  for _ in {1..30}; do
+    [[ -S "$LOCAL_MYSQL_SOCKET" ]] && return
+    sleep 1
+  done
+  echo "Embedded MySQL did not create socket: $LOCAL_MYSQL_SOCKET" >&2
+  exit 1
 }
 
 bootstrap_embedded_mysql() {
@@ -149,20 +167,26 @@ EOF
     "${APP_DIR}/.embedded/mysql-server/current/bin/mysqld" --defaults-file="${APP_DIR}/etc/my.cnf" --initialize
     local tmp_password
     tmp_password="$(awk '/temporary password/ {print $NF}' "${APP_DIR}/.data/log/mysqld.err" | tail -n 1)"
-    "${APP_DIR}/.embedded/mysql-server/current/bin/mysqld" --defaults-file="${APP_DIR}/etc/my.cnf" --daemonize
-    for _ in {1..30}; do
-      [[ -S "$LOCAL_MYSQL_SOCKET" ]] && break
-      sleep 1
-    done
+    start_embedded_mysql_if_needed
     "${APP_DIR}/.embedded/mysql-server/current/bin/mysql" --protocol=socket --socket="$LOCAL_MYSQL_SOCKET" -uroot -p"${tmp_password}" --connect-expired-password <<SQL
 ALTER USER 'root'@'localhost' IDENTIFIED BY '${LOCAL_MYSQL_ADMIN_PASSWORD}';
 RENAME USER 'root'@'localhost' TO '${LOCAL_MYSQL_ADMIN_USER}'@'localhost';
 GRANT ALL PRIVILEGES ON *.* TO '${LOCAL_MYSQL_ADMIN_USER}'@'localhost' WITH GRANT OPTION;
 FLUSH PRIVILEGES;
 SQL
-    MYSQL_PWD="$LOCAL_MYSQL_ADMIN_PASSWORD" "${APP_DIR}/.embedded/mysql-server/current/bin/mysqladmin" --protocol=socket --socket="$LOCAL_MYSQL_SOCKET" -u"$LOCAL_MYSQL_ADMIN_USER" shutdown
+  else
+    start_embedded_mysql_if_needed
   fi
-  setup_local_admin_profile_only
+  LOCAL_PROFILE_NAME="$LOCAL_MYSQL_PROFILE_NAME" \
+  LOCAL_MYSQL_SOCKET="$LOCAL_MYSQL_SOCKET" \
+  LOCAL_MYSQL_ADMIN_USER="$LOCAL_MYSQL_ADMIN_USER" \
+  LOCAL_MYSQL_ADMIN_PASSWORD="$LOCAL_MYSQL_ADMIN_PASSWORD" \
+  LOCAL_MYSQL_DATABASE="$LOCAL_MYSQL_DATABASE" \
+  MRS_CONSOLE_CONFIGDB_NAME="$CONFIGDB_NAME" \
+  MRS_CONSOLE_CONFIGDB_USER="$CONFIGDB_USER" \
+  MRS_CONSOLE_CONFIGDB_PASSWORD="$CONFIGDB_PASSWORD" \
+  MYSQL_BIN="${APP_DIR}/.embedded/mysql-server/current/bin/mysql" \
+  "${APP_DIR}/secured_connection_profile_setup.sh"
 }
 
 install_systemd_service() {
@@ -229,7 +253,6 @@ install_python_deps "$selected_python"
 ensure_tls_assets
 write_runtime_env
 bootstrap_embedded_mysql
-chmod 600 profiles.json 2>/dev/null || true
 chmod 700 .ssh-tunnels 2>/dev/null || true
 chmod 700 profile_ssh_keys 2>/dev/null || true
 
