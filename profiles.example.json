@@ -1,6 +1,16 @@
 {
   "profiles": [
     {
+      "name": "local-admin-profile",
+      "label": "Local Admin Profile",
+      "mode": "socket",
+      "socket": ".data/run/mysql.sock",
+      "database": "mysql",
+      "default_username": "localadmin",
+      "profile_management": true,
+      "force_password_change": true
+    },
+    {
       "name": "default",
       "label": "Local MySQL REST Service",
       "use_ssh_tunnel": false,

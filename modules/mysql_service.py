@@ -28,6 +28,10 @@ def stop_all_shared_tunnels() -> None:
 
 
 def ensure_login_tunnels() -> None:
+    from flask import has_request_context, session
+    if has_request_context() and session.get("connection_profile", {}).get("mode") == "socket":
+        return
+
     runtime_config = get_runtime_config()
     try:
         with socket.create_connection((runtime_config.host, runtime_config.port), timeout=runtime_config.connect_timeout):
@@ -47,6 +51,15 @@ def ensure_login_tunnels() -> None:
 
 
 def mysqlsh_uri(username: str, password: str) -> str:
+    from flask import has_request_context, session
+    if has_request_context():
+        profile = session.get("connection_profile", {})
+        if profile.get("mode") == "socket":
+            socket_path = str(profile.get("socket", "")).strip()
+            if not socket_path.startswith("/"):
+                socket_path = str((Path(__file__).resolve().parent.parent / socket_path).resolve())
+            return f"mysql://{quote(username)}:{quote(password)}@localhost?socket={quote(socket_path, safe='')}"
+
     runtime_config = get_runtime_config()
     return f"mysql://{quote(username)}:{quote(password)}@{runtime_config.host}:{runtime_config.port}"
 

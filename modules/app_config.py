@@ -51,6 +51,9 @@ def get_runtime_config() -> AppConfig:
     if not profile:
         return CONFIG
 
+    if profile.get("mode") == "socket":
+        return CONFIG
+
     use_ssh_tunnel = bool(profile.get("use_ssh_tunnel"))
     runtime_host = "127.0.0.1" if use_ssh_tunnel else str(profile.get("db_host", CONFIG.host))
     runtime_port = int(profile.get("local_db_port", CONFIG.port) if use_ssh_tunnel else profile.get("db_port", CONFIG.port))

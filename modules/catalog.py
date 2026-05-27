@@ -9,10 +9,10 @@ ROLE_LABELS = {
 
 ROLE_MENUS = {
     "admin": [
-        {"slug": "config", "label": "Config"},
         {"slug": "user", "label": "User"},
         {"slug": "granting-privileges", "label": "Granting Privileges"},
         {"slug": "restapidb", "label": "RestAPIDB"},
+        {"slug": "config", "label": "Profiles"},
         {"slug": "update", "label": "Update"},
         {"slug": "show-grants", "label": "Show Grants"},
     ],
@@ -32,12 +32,13 @@ ROLE_MENUS = {
 
 PAGE_CONTENT = {
     "config": {
-        "title": "Config",
-        "summary": "Define the MySQL database endpoint, MySQL REST Service endpoint, and optional SSH tunnel profile used by logins.",
+        "title": "Profiles",
+        "summary": "Define MySQL database endpoints, MySQL REST Service endpoints, and optional SSH tunnel profiles.",
         "items": [
-            "Profiles contain infrastructure details only; user passwords are entered at login.",
+            "Profile management is available only through local-admin-profile.",
+            "Profiles contain non-secret infrastructure details only; user passwords are entered at login.",
             "The selected profile drives both DB metadata operations and REST endpoint testing.",
-            "SSH tunnel settings are used server-side and are not persisted in browser-visible session fields.",
+            "SSH private-key material stays server-side under profile_ssh_keys/ and is never rendered to the browser.",
         ],
     },
     "user": {

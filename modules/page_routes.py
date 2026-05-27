@@ -7,7 +7,7 @@ from flask import Flask, flash, jsonify, redirect, render_template, request, ses
 
 from modules.catalog import OBJECT_PRIVILEGES, PAGE_CONTENT, USER_TABS, GRANT_TABS, RESTAPIDB_TABS
 from modules.app_config import active_login_profile, default_login_profile
-from modules.profile_store import get_profile, profile_names, update_profile
+from modules.profile_store import can_manage_profiles, get_profile, profile_names, update_profile
 from modules.update_service import poll_token_matches, read_update_status, start_update_job
 from modules.services import (
     classify_role,
@@ -380,6 +380,9 @@ def register_routes(app: Flask) -> None:
         user = current_user()
         if not user or user["role"] != "admin":
             return redirect(url_for("login"))
+        if not can_manage_profiles(session.get("connection_profile", {})):
+            flash("Profile management requires local-admin-profile.", "error")
+            return redirect(url_for("dashboard", slug=role_home(user["role"])))
 
         profile_name = request.form.get("profile_name", "").strip() or "default"
         try:
@@ -862,7 +865,7 @@ def register_routes(app: Flask) -> None:
                 stop_all_shared_tunnels()
             session["connection_profile"] = login_profile
             try:
-                if login_profile["use_ssh_tunnel"]:
+                if login_profile.get("use_ssh_tunnel"):
                     start_shared_tunnels()
                 ensure_login_tunnels()
                 grants = fetch_grants(username, password)

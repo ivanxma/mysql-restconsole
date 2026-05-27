@@ -29,12 +29,11 @@ body {
 
 .app-shell {
   min-height: 100vh;
-  display: grid;
-  grid-template-columns: minmax(84px, 280px) minmax(0, 1fr);
 }
 
 .app-shell-login {
-  grid-template-columns: 96px minmax(0, 1fr);
+  display: grid;
+  place-items: center;
 }
 
 .sidebar {
@@ -99,23 +98,27 @@ body {
 
 .menu {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  flex-wrap: wrap;
   gap: 8px;
+  margin-bottom: 20px;
 }
 
 .menu-link {
-  color: rgba(255, 246, 238, 0.78);
+  color: var(--muted);
   text-decoration: none;
-  padding: 12px 14px;
-  border-radius: 14px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.58);
   transition: transform 120ms ease, background 120ms ease, color 120ms ease;
 }
 
 .menu-link:hover,
 .menu-link.is-active {
-  background: rgba(255, 255, 255, 0.1);
-  color: #fffdf8;
-  transform: translateX(3px);
+  background: var(--surface-strong);
+  color: var(--accent-deep);
+  transform: translateY(-1px);
 }
 
 .sidebar-foot {
@@ -144,6 +147,8 @@ body {
 .main-panel {
   padding: 28px;
   min-width: 0;
+  max-width: 1440px;
+  margin: 0 auto;
 }
 
 .main-panel-login {
@@ -160,10 +165,16 @@ body {
   margin-bottom: 22px;
   padding: 18px 22px;
   border: 1px solid var(--border);
-  border-radius: 24px;
+  border-radius: 8px;
   background: var(--surface);
   backdrop-filter: blur(12px);
   box-shadow: var(--shadow);
+}
+
+.topbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
 }
 
 .topbar h2 {
@@ -200,7 +211,7 @@ body {
 .ghost-button,
 .primary-button {
   border: none;
-  border-radius: 14px;
+  border-radius: 8px;
   padding: 12px 18px;
   font: inherit;
   cursor: pointer;
@@ -226,7 +237,7 @@ body {
 
 .flash {
   padding: 12px 14px;
-  border-radius: 16px;
+  border-radius: 8px;
   border: 1px solid var(--border);
   background: rgba(255, 255, 255, 0.7);
 }
@@ -238,7 +249,7 @@ body {
 
 .inline-message {
   padding: 12px 14px;
-  border-radius: 16px;
+  border-radius: 8px;
   border: 1px solid var(--border);
   line-height: 1.5;
 }

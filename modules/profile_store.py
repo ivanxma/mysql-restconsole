@@ -7,6 +7,8 @@ from typing import Any
 
 
 PROFILE_FILE = Path(os.getenv("MRS_CONSOLE_PROFILE_FILE", "profiles.json"))
+LOCAL_ADMIN_PROFILE_NAME = os.getenv("LOCAL_MYSQL_PROFILE_NAME", "local-admin-profile")
+LOCAL_ADMIN_SOCKET = os.getenv("LOCAL_MYSQL_SOCKET", ".data/run/mysql.sock")
 
 
 DEFAULT_PROFILE = {
@@ -24,6 +26,17 @@ DEFAULT_PROFILE = {
     "ssh_jump_user": os.getenv("MRS_WEBAPP_SSH_JUMP_USER", "opc"),
 }
 
+LOCAL_ADMIN_PROFILE = {
+    "name": LOCAL_ADMIN_PROFILE_NAME,
+    "label": "Local Admin Profile",
+    "mode": "socket",
+    "socket": LOCAL_ADMIN_SOCKET,
+    "database": os.getenv("LOCAL_MYSQL_DATABASE", "mysql"),
+    "default_username": os.getenv("LOCAL_MYSQL_ADMIN_USER", "localadmin"),
+    "profile_management": True,
+    "force_password_change": True,
+}
+
 
 def _coerce_int(value: Any, default: int) -> int:
     try:
@@ -36,6 +49,20 @@ def _coerce_int(value: Any, default: int) -> int:
 
 
 def _normalize_profile(raw: dict[str, Any], fallback_name: str = "default") -> dict[str, Any]:
+    if str((raw or {}).get("mode", "")).strip() == "socket":
+        profile = dict(LOCAL_ADMIN_PROFILE)
+        profile.update(raw or {})
+        name = str(profile.get("name") or fallback_name).strip() or fallback_name
+        profile["name"] = name
+        profile["label"] = str(profile.get("label") or name).strip()
+        profile["mode"] = "socket"
+        profile["socket"] = str(profile.get("socket") or LOCAL_ADMIN_SOCKET).strip()
+        profile["database"] = str(profile.get("database") or "mysql").strip()
+        profile["default_username"] = str(profile.get("default_username") or "localadmin").strip()
+        profile["profile_management"] = bool(profile.get("profile_management"))
+        profile["force_password_change"] = bool(profile.get("force_password_change"))
+        return profile
+
     profile = dict(DEFAULT_PROFILE)
     profile.update(raw or {})
     name = str(profile.get("name") or fallback_name).strip() or fallback_name
@@ -56,18 +83,20 @@ def _normalize_profile(raw: dict[str, Any], fallback_name: str = "default") -> d
 
 def load_profiles() -> list[dict[str, Any]]:
     if not PROFILE_FILE.exists():
-        return [_normalize_profile(DEFAULT_PROFILE)]
+        return [_normalize_profile(LOCAL_ADMIN_PROFILE), _normalize_profile(DEFAULT_PROFILE)]
     try:
         payload = json.loads(PROFILE_FILE.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return [_normalize_profile(DEFAULT_PROFILE)]
+        return [_normalize_profile(LOCAL_ADMIN_PROFILE), _normalize_profile(DEFAULT_PROFILE)]
     raw_profiles = payload.get("profiles", []) if isinstance(payload, dict) else []
     profiles = [
         _normalize_profile(item, fallback_name=f"profile-{index}")
         for index, item in enumerate(raw_profiles, start=1)
         if isinstance(item, dict)
     ]
-    return profiles or [_normalize_profile(DEFAULT_PROFILE)]
+    if not any(item.get("name") == LOCAL_ADMIN_PROFILE_NAME for item in profiles):
+        profiles.insert(0, _normalize_profile(LOCAL_ADMIN_PROFILE))
+    return profiles or [_normalize_profile(LOCAL_ADMIN_PROFILE), _normalize_profile(DEFAULT_PROFILE)]
 
 
 def save_profiles(profiles: list[dict[str, Any]]) -> None:
@@ -77,6 +106,15 @@ def save_profiles(profiles: list[dict[str, Any]]) -> None:
         PROFILE_FILE.chmod(0o600)
     except OSError:
         pass
+
+
+def can_manage_profiles(active_profile: dict[str, Any] | None) -> bool:
+    return bool(
+        active_profile
+        and active_profile.get("name") == LOCAL_ADMIN_PROFILE_NAME
+        and active_profile.get("mode") == "socket"
+        and active_profile.get("profile_management")
+    )
 
 
 def profile_names() -> list[dict[str, str]]:

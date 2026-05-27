@@ -4,10 +4,10 @@ Flask web application for administering and testing MySQL REST Service (MRS) end
 
 ## Features
 
-- named login profiles stored in `profiles.json`
+- secured login profiles stored in local-only `profiles.json`
 - login using MySQL credentials against the selected profile
 - role detection from the authenticated account grants
-- Admin > Config page for DB and REST endpoint definitions
+- `local-admin-profile` for socket-only profile management
 - role-specific menus for:
   - Admin
   - Rest Admin
@@ -28,11 +28,21 @@ The code is split by responsibility:
 
 ## Configuration
 
-Edit Admin > Config after login, or seed a local `profiles.json` from `profiles.example.json` with non-secret endpoint definitions:
+Run `setup.sh` to create the socket-only `local-admin-profile`, then sign in with that profile to manage DB and REST endpoint profiles. The login page shows profile names only.
 
 ```json
 {
   "profiles": [
+    {
+      "name": "local-admin-profile",
+      "label": "Local Admin Profile",
+      "mode": "socket",
+      "socket": ".data/run/mysql.sock",
+      "database": "mysql",
+      "default_username": "localadmin",
+      "profile_management": true,
+      "force_password_change": true
+    },
     {
       "name": "default",
       "label": "Local MySQL REST Service",
@@ -53,6 +63,8 @@ Edit Admin > Config after login, or seed a local `profiles.json` from `profiles.
 
 Connection passwords are entered at login and are not stored in `profiles.json`. The real `profiles.json`, TLS material, SSH keys, `.runtime.env`, tokens, and credential files are ignored by git.
 
+Profile management is available only when authenticated through `local-admin-profile`. Other Admin sessions can use the console but cannot open or call profile-management routes.
+
 Useful environment variables:
 
 ```bash
@@ -61,6 +73,9 @@ export MRS_WEBAPP_MYSQLSH=/path/to/mysqlsh
 export MRS_WEBAPP_ADMIN_USER=admin
 export MRS_WEBAPP_ADMIN_PASSWORD='change-me'
 export MRS_WEBAPP_PORT=443
+export LOCAL_MYSQL_ADMIN_PASSWORD='temporary-password-for-first-setup'
+# Optional: required when setup must download an embedded MySQL Server tarball.
+export MRS_CONSOLE_MYSQL_SERVER_URL_LINUX_X86='https://dev.mysql.com/get/Downloads/MySQL-9.7/mysql-9.7.0-linux-glibc2.28-x86_64.tar.xz'
 ```
 
 ## Run
@@ -69,14 +84,14 @@ export MRS_WEBAPP_PORT=443
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-sudo ./setup.sh ol9 https
+./setup.sh ol9 https
 ```
 
 Then open `https://<host>/login`.
 
 ## Oracle Linux 9 on OCI Compute
 
-This repository includes a rerunnable `setup.sh` path for Oracle Linux 9. The OCI Compute init script below clones or refreshes the app, runs setup as the `opc` user, installs an HTTPS systemd service on port `443`, opens firewalld, and writes a login banner that shows install progress.
+This repository includes a rerunnable `setup.sh` path for Oracle Linux 9. The short OCI Compute init script below clones or refreshes the app, runs setup as the `opc` user, and starts the HTTPS systemd service on port `443`.
 
 Create the instance with these OCI values:
 
@@ -93,81 +108,39 @@ Set `APP_REPO_URL` to the Git repository URL for this app before launching the i
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_NAME="MySQL REST Console"
 APP_SLUG="mysql-rest-console"
-APP_REPO_URL="https://github.com/<owner>/<repo>.git"
+APP_REPO_URL="https://github.com/ivanxma/mysql-restconsole.git"
 APP_BRANCH="main"
 APP_USER="opc"
-APP_GROUP="opc"
 APP_DIR="/home/${APP_USER}/${APP_SLUG}"
-OS_FAMILY="ol9"
-DEPLOY_MODE="https"
-HTTPS_PORT="443"
-APP_HOST="0.0.0.0"
 STATE_DIR="/var/lib/${APP_SLUG}-init"
 INIT_LOG="/var/log/${APP_SLUG}-init.log"
-BANNER_FILE="/etc/profile.d/${APP_SLUG}-status.sh"
 
 mkdir -p "${STATE_DIR}"
 echo installing > "${STATE_DIR}/state"
-touch "${INIT_LOG}"
-chmod 0644 "${INIT_LOG}"
-
 exec > >(tee -a "${INIT_LOG}") 2>&1
-
-cat > "${BANNER_FILE}" <<'BANNER'
-#!/usr/bin/env bash
-[[ $- == *i* ]] || return 0
-[[ "$(id -un)" == "opc" ]] || return 0
-STATE_FILE="/var/lib/mysql-rest-console-init/state"
-case "$(cat "${STATE_FILE}" 2>/dev/null || true)" in
-  installing)
-    echo "Please wait until installation to be completed."
-    ;;
-  installed)
-    echo "MySQL REST Console setup has been completed."
-    systemctl --no-pager --full status mysql-rest-console-https.service 2>/dev/null || true
-    ;;
-  failed)
-    echo "MySQL REST Console setup failed. Review /var/log/mysql-rest-console-init.log."
-    ;;
-esac
-BANNER
-chmod 0644 "${BANNER_FILE}"
-
-fail() {
-  echo failed > "${STATE_DIR}/state"
-  exit 1
-}
-trap fail ERR
+trap 'echo failed > "${STATE_DIR}/state"' ERR
 
 dnf install -y git sudo
+[[ -d "${APP_DIR}/.git" ]] && sudo -u "${APP_USER}" git -C "${APP_DIR}" pull --ff-only || sudo -u "${APP_USER}" git clone --branch "${APP_BRANCH}" "${APP_REPO_URL}" "${APP_DIR}"
 
-if [[ -d "${APP_DIR}/.git" ]]; then
-  sudo -u "${APP_USER}" git -C "${APP_DIR}" fetch --all --prune
-  sudo -u "${APP_USER}" git -C "${APP_DIR}" pull --ff-only
-elif [[ -e "${APP_DIR}" ]]; then
-  mv "${APP_DIR}" "${APP_DIR}.$(date +%Y%m%d%H%M%S).bak"
-  sudo -u "${APP_USER}" git clone --branch "${APP_BRANCH}" "${APP_REPO_URL}" "${APP_DIR}"
-else
-  sudo -u "${APP_USER}" git clone --branch "${APP_BRANCH}" "${APP_REPO_URL}" "${APP_DIR}"
-fi
-
-chown -R "${APP_USER}:${APP_GROUP}" "${APP_DIR}"
-
+chown -R "${APP_USER}:${APP_USER}" "${APP_DIR}"
 sudo -u "${APP_USER}" env \
-  APP_HOST="${APP_HOST}" \
-  HTTPS_PORT="${HTTPS_PORT}" \
+  APP_HOST="0.0.0.0" \
+  HTTPS_PORT="443" \
   SERVICE_USER="${APP_USER}" \
-  SERVICE_GROUP="${APP_GROUP}" \
+  SERVICE_GROUP="${APP_USER}" \
   MRS_CONSOLE_UPDATE_ALLOWED_REMOTE_URL="${APP_REPO_URL}" \
   MRS_CONSOLE_UPDATE_ALLOWED_BRANCH="${APP_BRANCH}" \
-  "${APP_DIR}/setup.sh" "${OS_FAMILY}" "${DEPLOY_MODE}"
+  LOCAL_MYSQL_ADMIN_PASSWORD="${LOCAL_MYSQL_ADMIN_PASSWORD:-}" \
+  MRS_CONSOLE_MYSQL_SERVER_URL_LINUX_X86="${MRS_CONSOLE_MYSQL_SERVER_URL_LINUX_X86:-}" \
+  "${APP_DIR}/setup.sh" ol9 https
 
 systemctl enable --now mysql-rest-console-https.service
-systemctl --no-pager --full status mysql-rest-console-https.service || true
 echo installed > "${STATE_DIR}/state"
 ```
+
+If `LOCAL_MYSQL_ADMIN_PASSWORD` and `MRS_CONSOLE_MYSQL_SERVER_URL_LINUX_X86` are supplied, setup initializes the embedded socket-only local admin MySQL store. If they are omitted, setup still creates the `local-admin-profile` metadata and the web service, but profile-management login will not succeed until embedded MySQL is initialized.
 
 Verification on Oracle Linux 9:
 
@@ -189,7 +162,7 @@ Admin users can open `Admin > Update` to refresh the app from Git. The updater:
 - verifies the current branch against `MRS_CONSOLE_UPDATE_ALLOWED_BRANCH`, defaulting to `main`
 - runs `git fetch --all --prune` and `git pull --ff-only`
 - reruns `./setup.sh <os-family> none`
-- restarts active `mysql-rest-console-http.service` or `mysql-rest-console-https.service` services when systemd is available
+- restarts active `mysql-rest-console-https.service` services when systemd is available
 - writes status and logs under the OS temp directory in `mysql-rest-console/`
 
 The web-triggered updater defaults to `SKIP_PRIVILEGED_SETUP=1`. This lets a restricted service refresh code and Python dependencies without changing system packages, firewall rules, or systemd units. After an update that includes privileged deployment changes, run this from an SSH shell:

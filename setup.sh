@@ -15,6 +15,13 @@ SERVICE_USER="${SERVICE_USER:-$(id -un)}"
 SERVICE_GROUP="${SERVICE_GROUP:-$(id -gn)}"
 PYTHON_BIN="${MRS_CONSOLE_PYTHON_BIN:-}"
 SKIP_PRIVILEGED_SETUP="${SKIP_PRIVILEGED_SETUP:-0}"
+LOCAL_MYSQL_PROFILE_NAME="${LOCAL_MYSQL_PROFILE_NAME:-local-admin-profile}"
+LOCAL_MYSQL_ADMIN_USER="${LOCAL_MYSQL_ADMIN_USER:-localadmin}"
+LOCAL_MYSQL_ADMIN_PASSWORD="${LOCAL_MYSQL_ADMIN_PASSWORD:-}"
+LOCAL_MYSQL_SOCKET="${LOCAL_MYSQL_SOCKET:-${APP_DIR}/.data/run/mysql.sock}"
+LOCAL_MYSQL_DATABASE="${LOCAL_MYSQL_DATABASE:-mysql}"
+MYSQL_SERVER_VERSION="${MRS_CONSOLE_MYSQL_SERVER_VERSION:-9.7.0}"
+MYSQL_SERVER_URL_LINUX_X86="${MRS_CONSOLE_MYSQL_SERVER_URL_LINUX_X86:-}"
 
 detect_os_family() {
   if [[ "$(uname -s)" == "Darwin" ]]; then
@@ -37,7 +44,7 @@ detect_os_family() {
 install_ol9_prereqs() {
   [[ "$SKIP_PRIVILEGED_SETUP" == "1" ]] && return
   if command -v sudo >/dev/null 2>&1; then
-    sudo dnf install -y git curl python3.12 python3.12-pip python3.12-devel firewalld mysql-shell || true
+    sudo dnf install -y git curl xz libaio ncurses-compat-libs openssl python3.12 python3.12-pip python3.12-devel firewalld mysql-shell || true
   fi
 }
 
@@ -95,6 +102,67 @@ install_python_deps() {
   "$selected_python" -m venv "$VENV_DIR"
   "${VENV_DIR}/bin/python" -m pip install --upgrade pip
   "${VENV_DIR}/bin/python" -m pip install -r "${APP_DIR}/requirements.txt"
+}
+
+setup_local_admin_profile_only() {
+  LOCAL_PROFILE_NAME="$LOCAL_MYSQL_PROFILE_NAME" \
+  LOCAL_MYSQL_SOCKET="${LOCAL_MYSQL_SOCKET#${APP_DIR}/}" \
+  LOCAL_MYSQL_ADMIN_USER="$LOCAL_MYSQL_ADMIN_USER" \
+  LOCAL_MYSQL_DATABASE="$LOCAL_MYSQL_DATABASE" \
+  PROFILE_STORE="profiles.json" \
+  SSH_KEY_DIR="profile_ssh_keys" \
+  "${APP_DIR}/secured_connection_profile_setup.sh"
+}
+
+bootstrap_embedded_mysql() {
+  mkdir -p "${APP_DIR}/.embedded/mysql-server" "${APP_DIR}/.data/run" "${APP_DIR}/.data/log" "${APP_DIR}/.data/tmp" "${APP_DIR}/etc"
+  if [[ -z "$MYSQL_SERVER_URL_LINUX_X86" ]]; then
+    echo "MRS_CONSOLE_MYSQL_SERVER_URL_LINUX_X86 is not set; skipping embedded MySQL download." >&2
+    setup_local_admin_profile_only
+    return
+  fi
+  if [[ ! -x "${APP_DIR}/.embedded/mysql-server/current/bin/mysqld" ]]; then
+    local archive="${APP_DIR}/.embedded/mysql-server/mysql-${MYSQL_SERVER_VERSION}.tar.xz"
+    curl -L --fail -o "$archive" "$MYSQL_SERVER_URL_LINUX_X86"
+    tar -xf "$archive" -C "${APP_DIR}/.embedded/mysql-server"
+    local extracted
+    extracted="$(find "${APP_DIR}/.embedded/mysql-server" -maxdepth 1 -type d -name 'mysql-*' | sort | tail -n 1)"
+    ln -sfn "$extracted" "${APP_DIR}/.embedded/mysql-server/current"
+  fi
+  cat > "${APP_DIR}/etc/my.cnf" <<EOF
+[mysqld]
+basedir=${APP_DIR}/.embedded/mysql-server/current
+datadir=${APP_DIR}/.data/mysql
+socket=${LOCAL_MYSQL_SOCKET}
+pid-file=${APP_DIR}/.data/run/mysqld.pid
+log-error=${APP_DIR}/.data/log/mysqld.err
+tmpdir=${APP_DIR}/.data/tmp
+skip-networking
+mysqlx=0
+EOF
+  if [[ ! -d "${APP_DIR}/.data/mysql/mysql" ]]; then
+    [[ -n "$LOCAL_MYSQL_ADMIN_PASSWORD" ]] || {
+      echo "LOCAL_MYSQL_ADMIN_PASSWORD is required to initialize embedded local admin MySQL." >&2
+      setup_local_admin_profile_only
+      return
+    }
+    "${APP_DIR}/.embedded/mysql-server/current/bin/mysqld" --defaults-file="${APP_DIR}/etc/my.cnf" --initialize
+    local tmp_password
+    tmp_password="$(awk '/temporary password/ {print $NF}' "${APP_DIR}/.data/log/mysqld.err" | tail -n 1)"
+    "${APP_DIR}/.embedded/mysql-server/current/bin/mysqld" --defaults-file="${APP_DIR}/etc/my.cnf" --daemonize
+    for _ in {1..30}; do
+      [[ -S "$LOCAL_MYSQL_SOCKET" ]] && break
+      sleep 1
+    done
+    "${APP_DIR}/.embedded/mysql-server/current/bin/mysql" --protocol=socket --socket="$LOCAL_MYSQL_SOCKET" -uroot -p"${tmp_password}" --connect-expired-password <<SQL
+ALTER USER 'root'@'localhost' IDENTIFIED BY '${LOCAL_MYSQL_ADMIN_PASSWORD}';
+RENAME USER 'root'@'localhost' TO '${LOCAL_MYSQL_ADMIN_USER}'@'localhost';
+GRANT ALL PRIVILEGES ON *.* TO '${LOCAL_MYSQL_ADMIN_USER}'@'localhost' WITH GRANT OPTION;
+FLUSH PRIVILEGES;
+SQL
+    MYSQL_PWD="$LOCAL_MYSQL_ADMIN_PASSWORD" "${APP_DIR}/.embedded/mysql-server/current/bin/mysqladmin" --protocol=socket --socket="$LOCAL_MYSQL_SOCKET" -u"$LOCAL_MYSQL_ADMIN_USER" shutdown
+  fi
+  setup_local_admin_profile_only
 }
 
 install_systemd_service() {
@@ -160,8 +228,10 @@ selected_python="$(select_python)"
 install_python_deps "$selected_python"
 ensure_tls_assets
 write_runtime_env
+bootstrap_embedded_mysql
 chmod 600 profiles.json 2>/dev/null || true
 chmod 700 .ssh-tunnels 2>/dev/null || true
+chmod 700 profile_ssh_keys 2>/dev/null || true
 
 case "$DEPLOY_MODE" in
   http)
