@@ -47,7 +47,8 @@ detect_os_family() {
 install_ol9_prereqs() {
   [[ "$SKIP_PRIVILEGED_SETUP" == "1" ]] && return
   if command -v sudo >/dev/null 2>&1; then
-    sudo dnf install -y git curl xz libaio ncurses-compat-libs openssl python3.12 python3.12-pip python3.12-devel firewalld mysql-shell || true
+    sudo dnf install -y git curl xz libaio openssl python3.12 python3.12-pip python3.12-devel firewalld
+    sudo dnf install -y ncurses-compat-libs mysql-shell || true
   fi
 }
 
