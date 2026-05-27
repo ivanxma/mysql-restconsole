@@ -93,7 +93,7 @@ EOF
 }
 
 ensure_tls_assets() {
-  [[ "$DEPLOY_MODE" == "https" || "$DEPLOY_MODE" == "both" ]] || return
+  [[ "$DEPLOY_MODE" == "https" || "$DEPLOY_MODE" == "both" ]] || return 0
   if [[ -r "$TLS_CERT" && -r "$TLS_KEY" ]]; then
     return
   fi
