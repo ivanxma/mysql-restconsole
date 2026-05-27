@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% set title = "Login | MySQL REST Console" %}
+{% block content %}
+<section class="login-stage">
+  <div class="login-intro">
+    <div class="brand-mark brand-mark-large">
+      <div class="brand-orb"></div>
+      <div>
+        <p class="brand-kicker">MySQL</p>
+        <h1>REST Console</h1>
+      </div>
+    </div>
+    <div class="intro-copy">
+      <p class="eyebrow">MRS Control Surface</p>
+      <h2>Role-Aware MySQL REST Service Console</h2>
+      <p>
+        Sign in with your MySQL account. The application classifies each session as
+        Admin, Rest Admin, or Test User from the grants returned by the target database.
+      </p>
+    </div>
+    <div class="login-legend">
+      <div class="legend-card">
+        <span>Admin</span>
+        <p>Users, privilege grants, and RestAPIDB governance.</p>
+      </div>
+      <div class="legend-card">
+        <span>Rest Admin</span>
+        <p>Create services and expose databases, tables, or stored procedures.</p>
+      </div>
+      <div class="legend-card">
+        <span>Test User</span>
+        <p>List services and test protected or public REST endpoints.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="login-workspace">
+    <form class="login-card" method="post">
+      <div class="login-card-head">
+        <p class="eyebrow">Sign In</p>
+        <h3>Database Authentication</h3>
+        <p class="login-subcopy">Use the target MySQL account you want the app to classify.</p>
+      </div>
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          {% for category, message in messages %}
+          <div class="inline-message {% if category == 'error' %}inline-message-error{% else %}inline-message-warn{% endif %}">{{ message }}</div>
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
+      {% if login_error %}
+      <div class="inline-message inline-message-error">{{ login_error }}</div>
+      {% endif %}
+      <label class="field">
+        <span>Username</span>
+        <input type="text" name="username" placeholder="admin-rest" autocomplete="username" value="{{ login_username or '' }}" required>
+      </label>
+      <label class="field">
+        <span>Password</span>
+        <input type="password" name="password" placeholder="••••••••" autocomplete="current-password" required>
+      </label>
+      <section class="subsection-card login-subsection">
+        <div class="panel-head">
+          <div>
+            <h4>Connection Profile</h4>
+            <p class="panel-copy">Choose the saved DB and REST endpoint definition for this session.</p>
+          </div>
+        </div>
+        <div class="form-grid">
+          <label class="field">
+            <span>Profile</span>
+            <select name="profile_name">
+              {% for item in login_profiles %}
+              <option value="{{ item.name }}" {% if login_profile.name == item.name %}selected{% endif %}>{{ item.label }}</option>
+              {% endfor %}
+            </select>
+          </label>
+        </div>
+      </section>
+      <button class="primary-button" type="submit">Login</button>
+    </form>
+  </div>
+</section>
+{% endblock %}

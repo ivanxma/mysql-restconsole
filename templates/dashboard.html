@@ -1,0 +1,1551 @@
+{% extends "base.html" %}
+{% set title = page["title"] ~ " | MySQL REST Console" %}
+{% block content %}
+{% if login_notice %}
+<div class="inline-message inline-message-warn">{{ login_notice }}</div>
+{% endif %}
+{% if subtabs %}
+<nav class="subnav">
+  {% for tab in subtabs %}
+  <a
+    class="subnav-link {% if active_tab == tab.slug %}is-active{% endif %}"
+    href="{{ url_for('dashboard', slug=active_slug, tab=tab.slug) }}"
+  >
+    {{ tab.label }}
+  </a>
+  {% endfor %}
+</nav>
+{% endif %}
+<section class="hero-panel">
+  <div>
+    <p class="eyebrow">{{ current_role_label }}</p>
+    <h3>{{ page["title"] }}</h3>
+    <p class="hero-copy">{{ page["summary"] }}</p>
+  </div>
+  <div class="hero-metrics">
+    <div class="metric-card">
+      <span>Logged In As</span>
+      <strong>{{ current_user.username }}</strong>
+    </div>
+    <div class="metric-card">
+      <span>Detected Role</span>
+      <strong>{{ current_role_label }}</strong>
+    </div>
+  </div>
+</section>
+
+{% if active_slug == "config" %}
+<section class="panel form-panel">
+  <div class="panel-head">
+    <div>
+      <h4>REST Endpoint and DB Definition</h4>
+      <p class="panel-copy">Update the saved connection profile used by DB metadata operations and MRS endpoint tests.</p>
+    </div>
+  </div>
+  <form class="stack-form selector-form" action="{{ url_for('dashboard', slug='config') }}" method="get">
+    <div class="form-grid form-grid-wide">
+      <label class="field">
+        <span>Profile</span>
+        <select name="profile" onchange="this.form.submit()">
+          {% for profile_item in config_profiles %}
+          <option value="{{ profile_item.name }}" {% if config_profile_name == profile_item.name %}selected{% endif %}>{{ profile_item.label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+  </form>
+  <form class="stack-form" action="{{ url_for('admin_update_config_profile') }}" method="post">
+    <input type="hidden" name="profile_name" value="{{ config_profile.name }}">
+    <div class="form-grid">
+      <label class="field">
+        <span>Profile Label</span>
+        <input type="text" name="label" value="{{ config_profile.label }}" required>
+      </label>
+      <label class="field">
+        <span>DB Host</span>
+        <input type="text" name="db_host" value="{{ config_profile.db_host }}" required>
+      </label>
+      <label class="field">
+        <span>DB Port</span>
+        <input type="number" name="db_port" value="{{ config_profile.db_port }}" min="1" max="65535" required>
+      </label>
+      <label class="field">
+        <span>REST Endpoint Host</span>
+        <input type="text" name="api_host" value="{{ config_profile.api_host }}" required>
+      </label>
+      <label class="field">
+        <span>REST Endpoint Port</span>
+        <input type="number" name="api_port" value="{{ config_profile.api_port }}" min="1" max="65535" required>
+      </label>
+    </div>
+    <section class="subsection-card">
+      <div class="panel-head">
+        <div>
+          <h4>SSH Tunnel</h4>
+          <p class="panel-copy">When enabled, login starts local DB and REST endpoint tunnels through the jump host.</p>
+        </div>
+      </div>
+      <label class="toggle-field">
+        <input type="checkbox" name="use_ssh_tunnel" id="config-use-ssh-tunnel" {% if config_profile.use_ssh_tunnel %}checked{% endif %}>
+        <span>Using SSH Tunnel</span>
+      </label>
+      <div class="login-tunnel-fields" id="config-tunnel-fields">
+        <div class="form-grid">
+          <label class="field">
+            <span>Private Key</span>
+            <input type="text" name="ssh_key_path" value="{{ config_profile.ssh_key_path }}" placeholder="~/.ssh/id_rsa">
+          </label>
+          <label class="field">
+            <span>Jump Host IP</span>
+            <input type="text" name="ssh_jump_host" value="{{ config_profile.ssh_jump_host }}" placeholder="bastion.example.com">
+          </label>
+          <label class="field">
+            <span>Jump Host User</span>
+            <input type="text" name="ssh_jump_user" value="{{ config_profile.ssh_jump_user }}" placeholder="opc">
+          </label>
+        </div>
+        <div class="form-grid">
+          <label class="field">
+            <span>Local DB Port</span>
+            <input type="number" name="local_db_port" value="{{ config_profile.local_db_port }}" min="1" max="65535">
+          </label>
+          <label class="field">
+            <span>Local REST Endpoint Port</span>
+            <input type="number" name="local_api_port" value="{{ config_profile.local_api_port }}" min="1" max="65535">
+          </label>
+        </div>
+      </div>
+    </section>
+    <div class="preview-grid">
+      <article class="preview-card">
+        <span>DB Runtime</span>
+        <strong>{% if config_profile.use_ssh_tunnel %}127.0.0.1:{{ config_profile.local_db_port }}{% else %}{{ config_profile.db_host }}:{{ config_profile.db_port }}{% endif %}</strong>
+      </article>
+      <article class="preview-card">
+        <span>REST Runtime</span>
+        <strong>{% if config_profile.use_ssh_tunnel %}127.0.0.1:{{ config_profile.local_api_port }}{% else %}{{ config_profile.api_host }}:{{ config_profile.api_port }}{% endif %}</strong>
+      </article>
+    </div>
+    <button class="primary-button" type="submit">Save Config</button>
+  </form>
+</section>
+<script>
+  (() => {
+    const toggle = document.getElementById("config-use-ssh-tunnel");
+    const tunnelFields = document.getElementById("config-tunnel-fields");
+    if (!toggle || !tunnelFields) return;
+
+    function syncTunnelFields() {
+      tunnelFields.hidden = !toggle.checked;
+      for (const input of tunnelFields.querySelectorAll("input")) {
+        input.disabled = !toggle.checked;
+      }
+    }
+
+    toggle.addEventListener("change", syncTunnelFields);
+    syncTunnelFields();
+  })();
+</script>
+{% elif active_slug == "update" %}
+<section class="panel">
+  <div class="panel-head">
+    <div>
+      <h4>Auto-Update</h4>
+      <p class="panel-copy">Pull the configured repository branch, rerun setup, and restart active services when systemd is available.</p>
+    </div>
+  </div>
+  <form class="stack-form" action="{{ url_for('admin_start_update') }}" method="post">
+    <div class="inline-message inline-message-warn">
+      The updater requires a clean git worktree. By default it reruns setup with <code>SKIP_PRIVILEGED_SETUP=1</code>; run <code>./setup.sh ol9 http</code> from a shell later if privileged service or firewall changes were skipped.
+    </div>
+    <button class="primary-button" id="update-button" type="submit" {% if not update_status.can_start %}disabled{% endif %}>Start Auto-Update</button>
+  </form>
+  <div class="preview-grid">
+    <article class="preview-card">
+      <span>State</span>
+      <strong id="update-state">{{ update_status.state or 'idle' }}</strong>
+    </article>
+    <article class="preview-card">
+      <span>Step</span>
+      <strong id="update-step">{{ update_status.step or '-' }}</strong>
+    </article>
+    <article class="preview-card preview-card-wide">
+      <span>Status</span>
+      <strong id="update-message">{{ update_status.message or 'No update has been started.' }}</strong>
+    </article>
+  </div>
+  <pre class="grant-list" id="update-log">{{ update_status.log_text or 'No update log output yet.' }}</pre>
+</section>
+<script>
+  (() => {
+    const token = {{ update_poll_token|tojson }};
+    const stateEl = document.getElementById("update-state");
+    const stepEl = document.getElementById("update-step");
+    const messageEl = document.getElementById("update-message");
+    const logEl = document.getElementById("update-log");
+    const button = document.getElementById("update-button");
+    async function poll() {
+      try {
+        const response = await fetch({{ url_for('admin_update_status')|tojson }}, {
+          cache: "no-store",
+          headers: {"X-MySQL-Rest-Console-Update-Poll-Token": token}
+        });
+        if (response.ok) {
+          const status = await response.json();
+          stateEl.textContent = status.state || "idle";
+          stepEl.textContent = status.step || "-";
+          messageEl.textContent = status.message || "No update has been started.";
+          logEl.textContent = status.log_text || "No update log output yet.";
+          if (button) button.disabled = !status.can_start;
+        }
+      } finally {
+        window.setTimeout(poll, 2500);
+      }
+    }
+    poll();
+  })();
+</script>
+{% elif active_slug == "user" and active_tab == "list" %}
+<section class="panel">
+  <div class="panel-head">
+    <div>
+      <h4>User List</h4>
+      <p class="panel-copy">System users are displayed for visibility but cannot be dropped.</p>
+    </div>
+  </div>
+  <form action="{{ url_for('admin_delete_users') }}" method="post">
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Select</th>
+            <th>User</th>
+            <th>Host</th>
+            <th>Role</th>
+            <th>Type</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for managed_user in managed_users %}
+          <tr>
+            <td>
+              {% if not managed_user.system %}
+              <input type="checkbox" name="selected_users" value="{{ managed_user.key }}">
+              {% else %}
+              <span class="table-badge table-badge-muted">Locked</span>
+              {% endif %}
+            </td>
+            <td>{{ managed_user.username }}</td>
+            <td>{{ managed_user.host }}</td>
+            <td>{{ managed_user.role_name }}</td>
+            <td>
+              {% if managed_user.system %}
+              <span class="table-badge table-badge-warn">System</span>
+              {% else %}
+              <span class="table-badge">Managed</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="table-actions">
+      <button class="primary-button" type="submit">Delete Selected</button>
+    </div>
+  </form>
+</section>
+{% elif active_slug == "user" and active_tab == "create" %}
+<section class="panel form-panel">
+  <div class="panel-head">
+    <div>
+      <h4>Create User</h4>
+      <p class="panel-copy">Create a MySQL account and assign the requested role mapping.</p>
+    </div>
+  </div>
+  <form class="stack-form" action="{{ url_for('admin_create_user') }}" method="post">
+    <div class="form-grid">
+      <label class="field">
+        <span>Username</span>
+        <input type="text" name="username" required>
+      </label>
+      <label class="field">
+        <span>Role</span>
+        <select name="role_name">
+          <option>Admin</option>
+          <option>Rest Admin</option>
+          <option>Rest User</option>
+        </select>
+      </label>
+      <label class="field">
+        <span>Password</span>
+        <input type="password" name="password" required>
+      </label>
+      <label class="field">
+        <span>Confirm Password</span>
+        <input type="password" name="confirm_password" required>
+      </label>
+    </div>
+    <button class="primary-button" type="submit">Create User</button>
+  </form>
+</section>
+{% elif active_slug == "granting-privileges" and active_tab == "grant-object-priv" %}
+<section class="panel form-panel">
+  <div class="panel-head">
+    <div>
+      <h4>Grant Object Privileges</h4>
+      <p class="panel-copy">Choose a database, an object, the privilege set, and the target users.</p>
+    </div>
+  </div>
+  <form class="stack-form selector-form" action="{{ url_for('dashboard', slug='granting-privileges') }}" method="get">
+    <input type="hidden" name="tab" value="grant-object-priv">
+    <div class="form-grid form-grid-wide">
+      <label class="field">
+        <span>Database</span>
+        <select name="db" onchange="this.form.submit()">
+          <option value="">Select database</option>
+          {% for db in databases %}
+          <option value="{{ db }}" {% if selected_db == db %}selected{% endif %}>{{ db }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+  </form>
+  <form class="stack-form" action="{{ url_for('admin_grant_object_priv') }}" method="post">
+    <input type="hidden" name="schema_name" value="{{ selected_db }}">
+    <div class="form-grid form-grid-wide">
+      <label class="field">
+        <span>Selected Database</span>
+        <input type="text" value="{{ selected_db if selected_db else 'Select database above' }}" readonly>
+      </label>
+      <label class="field">
+        <span>Table</span>
+        <select name="table_name" {% if not tables %}disabled{% endif %}>
+          {% if not tables %}
+          <option value="">Select database first</option>
+          {% endif %}
+          {% for table_name in tables %}
+          <option value="{{ table_name }}">{{ table_name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="field">
+        <span>Privilege</span>
+        <select name="privilege">
+          {% for privilege_name in object_privileges %}
+          <option value="{{ privilege_name }}">{{ privilege_name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+    <div class="user-pick">
+      <span class="field-label">User List</span>
+      <div class="checkbox-grid">
+        {% for managed_user in managed_users %}
+        <label class="checkbox-card">
+          <input type="checkbox" name="selected_users" value="{{ managed_user.key }}">
+          <span>{{ managed_user.username }}@{{ managed_user.host }}</span>
+        </label>
+        {% else %}
+        <p class="panel-copy">No non-system users available.</p>
+        {% endfor %}
+      </div>
+    </div>
+    <button class="primary-button" type="submit">Grant Privilege</button>
+  </form>
+</section>
+{% elif active_slug == "granting-privileges" and active_tab == "special-priv" %}
+<section class="panel form-panel">
+  <div class="panel-head">
+    <div>
+      <h4>Special Privileges</h4>
+      <p class="panel-copy">Grant MySQL administrative privileges and HeatWave MRS roles to selected non-system users.</p>
+    </div>
+  </div>
+  <nav class="subnav subnav-tight">
+    {% for category in special_priv_categories %}
+    <a
+      class="subnav-link {% if active_special_priv_category == category.slug %}is-active{% endif %}"
+      href="{{ url_for('dashboard', slug='granting-privileges', tab='special-priv', category=category.slug) }}"
+    >
+      {{ category.label }}
+    </a>
+    {% endfor %}
+  </nav>
+  <form class="stack-form" action="{{ url_for('admin_grant_special_priv') }}" method="post">
+    <input type="hidden" name="category" value="{{ active_special_priv_category }}">
+    <div class="user-pick">
+      <span class="field-label">Privileges</span>
+      <div class="checkbox-grid privilege-grid">
+        {% for privilege_item in special_privileges %}
+        <label class="checkbox-card checkbox-card-detail">
+          <input type="checkbox" name="selected_privileges" value="{{ privilege_item.value }}">
+          <span>
+            <strong>{{ privilege_item.name }}</strong>
+            <small>{{ privilege_item.context }}{% if privilege_item.comment %} | {{ privilege_item.comment }}{% endif %}</small>
+          </span>
+        </label>
+        {% else %}
+        <p class="panel-copy">No privileges were discovered for this category.</p>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="user-pick">
+      <span class="field-label">Target Users</span>
+      <div class="checkbox-grid">
+        {% for managed_user in managed_users %}
+        <label class="checkbox-card">
+          <input type="checkbox" name="selected_users" value="{{ managed_user.key }}">
+          <span>{{ managed_user.username }}@{{ managed_user.host }}</span>
+        </label>
+        {% else %}
+        <p class="panel-copy">No non-system users available.</p>
+        {% endfor %}
+      </div>
+    </div>
+    <button class="primary-button" type="submit">Grant Selected Privileges</button>
+  </form>
+</section>
+{% elif active_slug == "create-restful-service" %}
+<section class="panel form-panel">
+  <div class="panel-head">
+    <div>
+      <h4>Define RESTful Service</h4>
+      <p class="panel-copy">Create only the REST service path. Database and table exposure are handled in the dedicated menus.</p>
+    </div>
+  </div>
+  <section class="subsection-card">
+    <div class="panel-head">
+      <div>
+        <h4>Existing Service Paths</h4>
+        <p class="panel-copy">Current REST service paths already defined in MySQL HeatWave MRS.</p>
+      </div>
+    </div>
+    <div class="grant-list">
+      {% for service_path in available_services %}
+      <code>{{ service_path }}</code>
+      {% else %}
+      <p class="panel-copy">No REST service paths exist yet.</p>
+      {% endfor %}
+    </div>
+  </section>
+  <form class="stack-form" action="{{ url_for('rest_admin_create_restful_service') }}" method="post">
+    <div class="form-grid">
+      <label class="field">
+        <span>New RESTful Service Path Name</span>
+        <input type="text" name="service_name" value="{{ rest_service_form.service_name }}" placeholder="airline-rs" required>
+      </label>
+    </div>
+    <div class="preview-grid">
+      <article class="preview-card">
+        <span>Service Path</span>
+        <strong>{{ rest_service_preview.service_path or 'Enter a service name' }}</strong>
+      </article>
+      <article class="preview-card">
+        <span>Next Step</span>
+        <strong>Expose DB or Table</strong>
+      </article>
+      <article class="preview-card preview-card-wide">
+        <span>Service Preview</span>
+        <strong>{{ rest_service_preview.endpoint or 'Enter a service path name' }}</strong>
+      </article>
+    </div>
+    <div class="inline-message inline-message-warn">
+      This step only creates the REST service path. Use <code>Expose DB as Service</code> to bind a database or schema to it.
+    </div>
+    <button class="primary-button" type="submit">Create RESTful Service</button>
+  </form>
+</section>
+{% elif active_slug == "expose-db-as-service" %}
+<section class="panel form-panel">
+  <div class="panel-head">
+    <div>
+      <h4>Expose DB as Service</h4>
+      <p class="panel-copy">Bind a selected database/schema to an existing REST service path.</p>
+    </div>
+  </div>
+  {% if not available_services %}
+  <div class="inline-message inline-message-warn">
+    No REST service path exists yet. Create a RESTful service path first.
+  </div>
+  {% else %}
+  <form class="stack-form selector-form" action="{{ url_for('dashboard', slug='expose-db-as-service') }}" method="get">
+    <input type="hidden" name="auth_required" value="{{ rest_db_form.auth_required }}">
+    <div class="form-grid form-grid-wide">
+      <label class="field">
+        <span>REST Service</span>
+        <select name="service_path" onchange="this.form.submit()">
+          {% for service_path in available_services %}
+          <option value="{{ service_path }}" {% if rest_db_form.service_path == service_path %}selected{% endif %}>{{ service_path }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="field">
+        <span>Database</span>
+        <select name="db" onchange="this.form.submit()">
+          <option value="">Select database</option>
+          {% for db in databases %}
+          <option value="{{ db }}" {% if selected_db == db %}selected{% endif %}>{{ db }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+  </form>
+  <form class="stack-form" action="{{ url_for('rest_admin_expose_database_service') }}" method="post">
+    <input type="hidden" name="service_path" value="{{ rest_db_form.service_path }}">
+    <input type="hidden" name="source_schema" value="{{ selected_db }}">
+    <div class="form-grid">
+      <label class="field">
+        <span>Authentication</span>
+        <select name="auth_required">
+          <option value="Not Required" {% if rest_db_form.auth_required != 'Required' %}selected{% endif %}>Not Required</option>
+          <option value="Required" {% if rest_db_form.auth_required == 'Required' %}selected{% endif %}>Required</option>
+        </select>
+      </label>
+    </div>
+    <div class="preview-grid">
+      <article class="preview-card">
+        <span>REST Service</span>
+        <strong>{{ rest_db_preview.service_path or 'Select a REST service' }}</strong>
+      </article>
+      <article class="preview-card">
+        <span>Schema Path</span>
+        <strong>{{ rest_db_preview.schema_path or 'Select a database' }}</strong>
+      </article>
+      <article class="preview-card preview-card-wide">
+        <span>Endpoint Preview</span>
+        <strong>{{ rest_db_preview.endpoint or 'Select a REST service and database' }}</strong>
+      </article>
+    </div>
+    <button class="primary-button" type="submit">Expose Database</button>
+  </form>
+  {% endif %}
+</section>
+{% elif active_slug == "expose-table-as-service" %}
+<section class="panel form-panel">
+  <div class="panel-head">
+    <div>
+      <h4>Expose Table as Service</h4>
+      <p class="panel-copy">Create a view in <code>restapidb</code> from the selected database and table, then expose it through an existing REST service path.</p>
+    </div>
+  </div>
+  {% if not available_services %}
+  <div class="inline-message inline-message-warn">
+    No REST service path exists yet. Create a RESTful service path first.
+  </div>
+  {% else %}
+  <form class="stack-form selector-form" action="{{ url_for('dashboard', slug='expose-table-as-service') }}" method="get">
+    <input type="hidden" name="auth_required" value="{{ rest_table_form.auth_required }}">
+    <div class="form-grid form-grid-wide">
+      <label class="field">
+        <span>REST Service</span>
+        <select name="service_path" onchange="this.form.submit()">
+          {% for service_path in available_services %}
+          <option value="{{ service_path }}" {% if rest_table_form.service_path == service_path %}selected{% endif %}>{{ service_path }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="field">
+        <span>Database</span>
+        <select name="db" onchange="this.form.submit()">
+          <option value="">Select database</option>
+          {% for db in databases %}
+          <option value="{{ db }}" {% if selected_db == db %}selected{% endif %}>{{ db }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="field">
+        <span>Table</span>
+        <select name="table" onchange="this.form.submit()" {% if not tables %}disabled{% endif %}>
+          {% if not tables %}
+          <option value="">Select database first</option>
+          {% endif %}
+          {% for table_name in tables %}
+          <option value="{{ table_name }}" {% if selected_table == table_name %}selected{% endif %}>{{ table_name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+  </form>
+  <form class="stack-form" action="{{ url_for('rest_admin_expose_table_service') }}" method="post">
+    <input type="hidden" name="service_path" value="{{ rest_table_form.service_path }}">
+    <input type="hidden" name="source_schema" value="{{ selected_db }}">
+    <input type="hidden" name="source_table" value="{{ selected_table }}">
+    <div class="form-grid">
+      <label class="field">
+        <span>Authentication</span>
+        <select name="auth_required">
+          <option value="Not Required" {% if rest_table_form.auth_required != 'Required' %}selected{% endif %}>Not Required</option>
+          <option value="Required" {% if rest_table_form.auth_required == 'Required' %}selected{% endif %}>Required</option>
+        </select>
+      </label>
+    </div>
+    <div class="preview-grid">
+      <article class="preview-card">
+        <span>REST Service</span>
+        <strong>{{ rest_table_preview.service_path or 'Select a REST service' }}</strong>
+      </article>
+      <article class="preview-card">
+        <span>REST Schema</span>
+        <strong>{{ rest_table_preview.schema_path }}</strong>
+      </article>
+      <article class="preview-card preview-card-wide">
+        <span>Endpoint Preview</span>
+        <strong>{{ rest_table_preview.endpoint or 'Select a database and table' }}</strong>
+      </article>
+    </div>
+    <div class="inline-message inline-message-warn">
+      This action creates a SQL view inside <code>restapidb</code> based on the selected source table and exposes that view as the RESTful endpoint.
+    </div>
+    <button class="primary-button" type="submit">Expose Table</button>
+  </form>
+  {% endif %}
+</section>
+{% elif active_slug == "expose-sp-as-service" %}
+<section class="panel form-panel">
+  <div class="panel-head">
+    <div>
+      <h4>Expose SP as Service</h4>
+      <p class="panel-copy">Create a stored procedure in <code>restapidb</code>, define its parameters, and expose it through an existing REST service.</p>
+    </div>
+  </div>
+  {% if active_tab == "user" and not available_services %}
+  <div class="inline-message inline-message-warn">
+    No REST services are available yet. Create a RESTful service first, then return here to expose a stored procedure.
+  </div>
+  {% elif active_tab == "user" %}
+  <form class="stack-form" action="{{ url_for('rest_admin_create_rest_procedure') }}" method="post" id="rest-procedure-form">
+    <div class="form-grid form-grid-wide">
+      <label class="field">
+        <span>Stored Procedure Name</span>
+        <input type="text" name="procedure_name" value="{{ rest_procedure_form.procedure_name }}" placeholder="list_tables_rs" required>
+      </label>
+      <label class="field">
+        <span>REST Service</span>
+        <select name="service_path">
+          {% for service_path in available_services %}
+          <option value="{{ service_path }}" {% if rest_procedure_form.service_path == service_path %}selected{% endif %}>{{ service_path }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="field">
+        <span>Authentication</span>
+        <select name="auth_required">
+          <option value="Not Required" {% if rest_procedure_form.auth_required != 'Required' %}selected{% endif %}>Not Required</option>
+          <option value="Required" {% if rest_procedure_form.auth_required == 'Required' %}selected{% endif %}>Required</option>
+        </select>
+      </label>
+    </div>
+
+    <section class="subsection-card">
+      <div class="panel-head">
+        <div>
+          <h4>Parameters</h4>
+          <p class="panel-copy">Add zero or more parameter rows. Modes support <code>IN</code>, <code>OUT</code>, and <code>INOUT</code>.</p>
+        </div>
+        <button class="ghost-button" type="button" id="add-procedure-param">Add Row</button>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Parameter Name</th>
+              <th>Parameter Type</th>
+              <th>Mode</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="procedure-param-body">
+            {% for parameter in rest_procedure_form.parameters %}
+            <tr>
+              <td><input class="table-input" type="text" name="param_name" value="{{ parameter.name }}" placeholder="p_filter"></td>
+              <td><input class="table-input" type="text" name="param_type" value="{{ parameter.type }}" placeholder="VARCHAR(255)"></td>
+              <td>
+                <select class="table-input" name="param_mode">
+                  <option value="IN" {% if parameter.mode == 'IN' %}selected{% endif %}>IN</option>
+                  <option value="OUT" {% if parameter.mode == 'OUT' %}selected{% endif %}>OUT</option>
+                  <option value="INOUT" {% if parameter.mode == 'INOUT' %}selected{% endif %}>INOUT</option>
+                </select>
+              </td>
+              <td><button class="ghost-button param-remove-button" type="button">Remove</button></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <label class="field">
+      <span>Stored Procedure Body</span>
+      <textarea class="code-textarea" name="body_sql" rows="8">{{ rest_procedure_form.body }}</textarea>
+    </label>
+
+    <div class="preview-grid">
+      <article class="preview-card">
+        <span>Schema</span>
+        <strong>{{ rest_procedure_preview.schema_path }}</strong>
+      </article>
+      <article class="preview-card">
+        <span>REST Service</span>
+        <strong>{{ rest_procedure_form.service_path or 'Select a REST service' }}</strong>
+      </article>
+      <article class="preview-card preview-card-wide">
+        <span>Endpoint Preview</span>
+        <strong>{{ rest_procedure_preview.endpoint or 'Enter a procedure name and choose a REST service' }}</strong>
+      </article>
+    </div>
+
+    <button class="primary-button" type="submit">Create Procedure and Expose Service</button>
+  </form>
+  <script>
+    (() => {
+      const body = document.getElementById("procedure-param-body");
+      const addButton = document.getElementById("add-procedure-param");
+      if (!body || !addButton) return;
+
+      function bindRemoveButtons() {
+        for (const button of body.querySelectorAll(".param-remove-button")) {
+          button.onclick = () => {
+            const rows = body.querySelectorAll("tr");
+            if (rows.length === 1) {
+              rows[0].querySelector('input[name="param_name"]').value = "";
+              rows[0].querySelector('input[name="param_type"]').value = "VARCHAR(255)";
+              rows[0].querySelector('select[name="param_mode"]').value = "IN";
+              return;
+            }
+            button.closest("tr")?.remove();
+          };
+        }
+      }
+
+      addButton.addEventListener("click", () => {
+        const row = document.createElement("tr");
+        row.innerHTML = `
+          <td><input class="table-input" type="text" name="param_name" placeholder="p_filter"></td>
+          <td><input class="table-input" type="text" name="param_type" value="VARCHAR(255)" placeholder="VARCHAR(255)"></td>
+          <td>
+            <select class="table-input" name="param_mode">
+              <option value="IN">IN</option>
+              <option value="OUT">OUT</option>
+              <option value="INOUT">INOUT</option>
+            </select>
+          </td>
+          <td><button class="ghost-button param-remove-button" type="button">Remove</button></td>
+        `;
+        body.appendChild(row);
+        bindRemoveButtons();
+      });
+
+      bindRemoveButtons();
+    })();
+  </script>
+  {% elif active_tab == "sys" %}
+  <form class="stack-form selector-form" action="{{ url_for('dashboard', slug='expose-sp-as-service') }}" method="get">
+    <input type="hidden" name="tab" value="sys">
+    <div class="form-grid form-grid-wide">
+      <label class="field">
+        <span>REST Service</span>
+        <select name="service_path" onchange="this.form.submit()">
+          {% if not available_services %}
+          <option value="">No REST service available</option>
+          {% endif %}
+          {% for service_path in available_services %}
+          <option value="{{ service_path }}" {% if selected_service_path == service_path %}selected{% endif %}>{{ service_path }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="field">
+        <span>Authentication For Exposure</span>
+        <select name="procedure_auth_required" onchange="this.form.submit()">
+          <option value="Not Required" {% if rest_procedure_form.auth_required != 'Required' %}selected{% endif %}>Not Required</option>
+          <option value="Required" {% if rest_procedure_form.auth_required == 'Required' %}selected{% endif %}>Required</option>
+        </select>
+      </label>
+    </div>
+  </form>
+  <section class="subsection-card">
+    <div class="panel-head">
+      <div>
+        <h4>SYS Procedures</h4>
+        <p class="panel-copy">Stored procedures currently present in <code>sys</code> and their corresponding endpoint preview for the selected REST service.</p>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Procedure Name</th>
+            <th>Schema</th>
+            <th>Selected Service</th>
+            <th>Endpoint Preview</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for procedure_name in sys_procedures %}
+          <tr>
+            <td><code>{{ procedure_name }}</code></td>
+            <td><code>/restapidb</code></td>
+            <td><code>{{ selected_service_path or '-' }}</code></td>
+            <td><code>{{ (selected_service_path ~ '/restapidb/' ~ procedure_name.lower()) if selected_service_path else '-' }}</code></td>
+            <td>
+              {% if selected_service_path %}
+              <form action="{{ url_for('rest_admin_expose_sys_procedure') }}" method="post">
+                <input type="hidden" name="service_path" value="{{ selected_service_path }}">
+                <input type="hidden" name="procedure_name" value="{{ procedure_name }}">
+                <input type="hidden" name="auth_required" value="{{ rest_procedure_form.auth_required }}">
+                <button class="ghost-button" type="submit">Expose</button>
+              </form>
+              {% else %}
+              <span class="table-badge table-badge-muted">Select service</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="5">No stored procedures found in <code>sys</code>.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+</section>
+{% elif (active_slug == "restapidb" and active_tab == "list") or active_slug == "list-restful-services" %}
+{% if active_slug == "restapidb" %}
+<section class="panel form-panel">
+  <div class="panel-head">
+    <div>
+      <h4>RestAPIDB Object List</h4>
+      <p class="panel-copy">Objects discovered in schema `restapidb`, separated by type for faster review.</p>
+    </div>
+  </div>
+  <div class="object-columns">
+    <article class="object-column">
+      <h5>Tables</h5>
+      <div class="object-list">
+        {% for object_name in restapidb_objects.tables %}
+        <code>{{ object_name }}</code>
+        {% else %}
+        <p class="panel-copy">No tables found.</p>
+        {% endfor %}
+      </div>
+    </article>
+    <article class="object-column">
+      <h5>Views</h5>
+      <div class="object-list">
+        {% for object_name in restapidb_objects.views %}
+        <code>{{ object_name }}</code>
+        {% else %}
+        <p class="panel-copy">No views found.</p>
+        {% endfor %}
+      </div>
+    </article>
+    <article class="object-column">
+      <h5>SP</h5>
+      <div class="object-list">
+        {% for object_name in restapidb_objects.procedures %}
+        <code>{{ object_name }}</code>
+        {% else %}
+        <p class="panel-copy">No procedures found.</p>
+        {% endfor %}
+      </div>
+    </article>
+  </div>
+</section>
+{% endif %}
+<section class="panel">
+  <div class="panel-head">
+    <div>
+      <h4>Exposed REST Services</h4>
+      <p class="panel-copy">Published REST endpoints across all exposed REST schemas, including views, procedures, authentication, and enabled status.</p>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Endpoint</th>
+          <th>DB</th>
+          <th>REST Schema</th>
+          <th>Service</th>
+          <th>Type</th>
+          <th>REST Object</th>
+          <th>Source Object</th>
+          <th>Parameters</th>
+          <th>Auth Required</th>
+          <th>Auth App</th>
+          <th>Service Enabled</th>
+          <th>Schema Enabled</th>
+          <th>Object Enabled</th>
+          <th>Test</th>
+        </tr>
+      </thead>
+      <tbody id="rest-service-table-body">
+        {% for service_item in rest_services %}
+        <tr>
+          <td><code>{{ service_item.endpoint }}</code></td>
+          <td>{{ service_item.database }}</td>
+          <td><code>/{{ service_item.rest_schema_name }}</code></td>
+          <td><code>{{ service_item.service }}</code></td>
+          <td>{{ service_item.object_kind }}</td>
+          <td><code>{{ service_item.object_path }}</code></td>
+          <td><code>{{ service_item.source_object }}</code></td>
+          <td>
+            {% if service_item.param_names %}
+            <span class="table-badge">{{ service_item.param_summary }}</span>
+            {% else %}
+            <span class="table-badge table-badge-muted">None</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if service_item.auth_required == "Required" %}
+            <span class="table-badge table-badge-warn">Required</span>
+            {% else %}
+            <span class="table-badge table-badge-muted">Not Required</span>
+            {% endif %}
+          </td>
+          <td>{{ service_item.auth_apps }}</td>
+          <td>{{ service_item.service_enabled }}</td>
+          <td>{{ service_item.schema_enabled }}</td>
+          <td>{{ service_item.object_enabled }}</td>
+          <td>
+            <button
+              class="ghost-button service-test-button"
+              type="button"
+              data-endpoint-template="{{ service_item.endpoint }}"
+              data-service-path="{{ service_item.service }}"
+              data-object-kind="{{ service_item.object_kind }}"
+              data-schema-path="{{ service_item.schema_path }}"
+              data-object-path="{{ service_item.object_path }}"
+              data-auth-required="{{ service_item.auth_required }}"
+              data-auth-app="{{ service_item.auth_app_name }}"
+              data-auth-path="{{ service_item.auth_path }}"
+              data-param-names="{{ (service_item.param_names or []) | join(',') }}"
+              data-procedure-params='{{ service_item.procedure_params | tojson }}'
+            >
+              Test
+            </button>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="14">No published REST services were found.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+<dialog class="result-dialog" id="service-test-dialog">
+  <form class="dialog-form" id="service-test-form" method="dialog">
+    <div class="panel-head">
+      <div>
+        <h4>Test REST Service</h4>
+        <p class="panel-copy" id="service-test-target">Run the selected REST endpoint through the HeatWave tunnel.</p>
+      </div>
+      <button class="ghost-button" type="button" id="service-test-close">Close</button>
+    </div>
+    <input type="hidden" name="endpoint_template" id="service-test-endpoint-template">
+    <input type="hidden" name="service_path" id="service-test-service-path">
+    <input type="hidden" name="object_kind" id="service-test-object-kind">
+    <input type="hidden" name="auth_required" id="service-test-auth-required">
+    <input type="hidden" name="auth_app" id="service-test-auth-app">
+    <section class="subsection-card" id="service-test-path-section" hidden>
+      <div class="panel-head">
+        <div>
+          <h4>Path Parameters</h4>
+          <p class="panel-copy">Provide values for endpoint path placeholders.</p>
+        </div>
+      </div>
+      <div class="form-grid" id="service-test-param-grid"></div>
+    </section>
+    <section class="subsection-card" id="service-test-procedure-section" hidden>
+      <div class="panel-head">
+        <div>
+          <h4>Procedure Input Parameters</h4>
+          <p class="panel-copy">Provide values for <code>IN</code> and <code>INOUT</code> parameters. <code>OUT</code> parameters are returned after execution.</p>
+        </div>
+      </div>
+      <div class="inline-message inline-message-warn" id="service-test-procedure-note" hidden></div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Parameter</th>
+              <th>Mode</th>
+              <th>Value</th>
+            </tr>
+          </thead>
+          <tbody id="service-test-procedure-body"></tbody>
+        </table>
+      </div>
+    </section>
+    <div class="form-grid" id="service-test-query-grid">
+      <label class="field">
+        <span>Query String</span>
+        <input type="text" name="query_string" id="service-test-query-string" placeholder="limit=10&offset=0">
+      </label>
+    </div>
+    <div class="form-grid auth-fields" id="service-test-auth-fields" hidden>
+      <label class="field">
+        <span>Auth Username</span>
+        <input type="text" name="auth_username" id="service-test-auth-username">
+      </label>
+      <label class="field">
+        <span>Auth Password</span>
+        <input type="password" name="auth_password" id="service-test-auth-password">
+      </label>
+    </div>
+    <div class="dialog-actions">
+      <button class="primary-button" type="submit" id="service-test-submit">Execute</button>
+    </div>
+    <div class="result-status result-status-idle" id="service-test-status">Ready</div>
+    <div class="result-summary" id="service-test-summary">
+      <div class="summary-card">
+        <span>Request</span>
+        <strong id="service-test-request">No execution yet</strong>
+      </div>
+      <div class="summary-card">
+        <span>Response</span>
+        <strong id="service-test-response">Waiting</strong>
+      </div>
+    </div>
+    <div class="inline-message inline-message-error" id="service-test-error" hidden></div>
+    <div class="result-meta" id="service-test-meta" hidden></div>
+    <section class="subsection-card" id="service-test-out-section" hidden>
+      <div class="panel-head">
+        <div>
+          <h4>OUT Parameters</h4>
+          <p class="panel-copy">Output parameters returned by the REST procedure.</p>
+        </div>
+      </div>
+      <div class="result-kv" id="service-test-out-grid"></div>
+    </section>
+    <section class="subsection-card" id="service-test-resultsets-section" hidden>
+      <div class="panel-head">
+        <div>
+          <h4>Result Sets</h4>
+          <p class="panel-copy">One or more result sets returned by the REST procedure.</p>
+        </div>
+      </div>
+      <div class="result-sets" id="service-test-resultsets"></div>
+    </section>
+    <pre class="result-output" id="service-test-output" hidden></pre>
+  </form>
+</dialog>
+<script>
+  (() => {
+    const dialog = document.getElementById("service-test-dialog");
+    if (!dialog) return;
+    const form = document.getElementById("service-test-form");
+    const closeButton = document.getElementById("service-test-close");
+    const target = document.getElementById("service-test-target");
+    const endpointTemplate = document.getElementById("service-test-endpoint-template");
+    const servicePath = document.getElementById("service-test-service-path");
+    const objectKind = document.getElementById("service-test-object-kind");
+    const authRequired = document.getElementById("service-test-auth-required");
+    const authApp = document.getElementById("service-test-auth-app");
+    const authPath = document.createElement("input");
+    authPath.type = "hidden";
+    authPath.name = "auth_path";
+    authPath.id = "service-test-auth-path";
+    form.appendChild(authPath);
+    const paramGrid = document.getElementById("service-test-param-grid");
+    const pathSection = document.getElementById("service-test-path-section");
+    const procedureSection = document.getElementById("service-test-procedure-section");
+    const procedureBody = document.getElementById("service-test-procedure-body");
+    const procedureNote = document.getElementById("service-test-procedure-note");
+    const queryGrid = document.getElementById("service-test-query-grid");
+    const authFields = document.getElementById("service-test-auth-fields");
+    const authUsername = document.getElementById("service-test-auth-username");
+    const authPassword = document.getElementById("service-test-auth-password");
+    const submitButton = document.getElementById("service-test-submit");
+    const statusBox = document.getElementById("service-test-status");
+    const requestSummary = document.getElementById("service-test-request");
+    const responseSummary = document.getElementById("service-test-response");
+    const errorBox = document.getElementById("service-test-error");
+    const metaBox = document.getElementById("service-test-meta");
+    const outSection = document.getElementById("service-test-out-section");
+    const outGrid = document.getElementById("service-test-out-grid");
+    const resultSetsSection = document.getElementById("service-test-resultsets-section");
+    const resultSetsBox = document.getElementById("service-test-resultsets");
+    const outputBox = document.getElementById("service-test-output");
+
+    function resetResult() {
+      statusBox.className = "result-status result-status-idle";
+      statusBox.textContent = "Ready";
+      requestSummary.textContent = "No execution yet";
+      responseSummary.textContent = "Waiting";
+      errorBox.hidden = true;
+      errorBox.textContent = "";
+      metaBox.hidden = true;
+      metaBox.textContent = "";
+      outSection.hidden = true;
+      outGrid.innerHTML = "";
+      resultSetsSection.hidden = true;
+      resultSetsBox.innerHTML = "";
+      outputBox.hidden = true;
+      outputBox.textContent = "";
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
+    function buildParamInputs(paramNames) {
+      paramGrid.innerHTML = "";
+      pathSection.hidden = paramNames.length === 0;
+      for (const name of paramNames) {
+        const label = document.createElement("label");
+        label.className = "field";
+        const title = document.createElement("span");
+        title.textContent = name;
+        const input = document.createElement("input");
+        input.type = "text";
+        input.name = `path_param:${name}`;
+        input.required = true;
+        label.appendChild(title);
+        label.appendChild(input);
+        paramGrid.appendChild(label);
+      }
+    }
+
+    function buildProcedureInputs(procedureParams) {
+      procedureBody.innerHTML = "";
+      const inputParams = procedureParams.filter((param) => ["IN", "INOUT"].includes((param.mode || "").toUpperCase()));
+      const outParams = procedureParams.filter((param) => (param.mode || "").toUpperCase() === "OUT");
+      procedureSection.hidden = procedureParams.length === 0;
+      queryGrid.hidden = procedureParams.length > 0;
+      procedureNote.hidden = true;
+      procedureNote.textContent = "";
+
+      if (procedureParams.length === 0) {
+        return;
+      }
+
+      if (inputParams.length === 0) {
+        procedureNote.hidden = false;
+        procedureNote.textContent = outParams.length > 0
+          ? `This procedure has no input parameters. Returned OUT parameters: ${outParams.map((param) => param.name).join(", ")}.`
+          : "This procedure has no input parameters.";
+      } else if (outParams.length > 0) {
+        procedureNote.hidden = false;
+        procedureNote.textContent = `Returned OUT parameters: ${outParams.map((param) => param.name).join(", ")}.`;
+      }
+
+      for (const param of inputParams) {
+        const row = document.createElement("tr");
+
+        const nameCell = document.createElement("td");
+        const nameCode = document.createElement("code");
+        nameCode.textContent = param.name;
+        nameCell.appendChild(nameCode);
+
+        const modeCell = document.createElement("td");
+        modeCell.textContent = param.mode;
+
+        const valueCell = document.createElement("td");
+        const input = document.createElement("input");
+        input.className = "table-input";
+        input.type = "text";
+        input.name = `procedure_param:${param.name}`;
+        input.placeholder = `Value for ${param.name}`;
+        input.required = true;
+        valueCell.appendChild(input);
+
+        row.appendChild(nameCell);
+        row.appendChild(modeCell);
+        row.appendChild(valueCell);
+        procedureBody.appendChild(row);
+      }
+    }
+
+    function renderKeyValueGrid(container, entries) {
+      container.innerHTML = "";
+      for (const [key, value] of Object.entries(entries)) {
+        const card = document.createElement("article");
+        card.className = "summary-card";
+        const label = document.createElement("span");
+        label.textContent = key;
+        const strong = document.createElement("strong");
+        strong.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+        card.appendChild(label);
+        card.appendChild(strong);
+        container.appendChild(card);
+      }
+    }
+
+    function renderRowsTable(rows) {
+      if (!Array.isArray(rows) || rows.length === 0) {
+        const empty = document.createElement("p");
+        empty.className = "panel-copy";
+        empty.textContent = "No rows returned.";
+        return empty;
+      }
+      const columns = Array.from(
+        rows.reduce((set, row) => {
+          if (row && typeof row === "object" && !Array.isArray(row)) {
+            for (const key of Object.keys(row)) set.add(key);
+          }
+          return set;
+        }, new Set())
+      );
+      if (columns.length === 0) {
+        const pre = document.createElement("pre");
+        pre.className = "result-output";
+        pre.hidden = false;
+        pre.textContent = JSON.stringify(rows, null, 2);
+        return pre;
+      }
+      const wrap = document.createElement("div");
+      wrap.className = "table-wrap";
+      const table = document.createElement("table");
+      table.className = "data-table";
+      const thead = document.createElement("thead");
+      const headRow = document.createElement("tr");
+      for (const column of columns) {
+        const th = document.createElement("th");
+        th.textContent = column;
+        headRow.appendChild(th);
+      }
+      thead.appendChild(headRow);
+      table.appendChild(thead);
+      const tbody = document.createElement("tbody");
+      for (const row of rows) {
+        const tr = document.createElement("tr");
+        for (const column of columns) {
+          const td = document.createElement("td");
+          const value = row && typeof row === "object" && !Array.isArray(row) ? row[column] : row;
+          td.textContent = value == null ? "" : typeof value === "string" ? value : JSON.stringify(value);
+          tr.appendChild(td);
+        }
+        tbody.appendChild(tr);
+      }
+      table.appendChild(tbody);
+      wrap.appendChild(table);
+      return wrap;
+    }
+
+    function renderResultSets(resultSets) {
+      resultSetsBox.innerHTML = "";
+      resultSetsSection.hidden = !Array.isArray(resultSets) || resultSets.length === 0;
+      for (const [index, resultSet] of resultSets.entries()) {
+        const card = document.createElement("section");
+        card.className = "subsection-card";
+        const head = document.createElement("div");
+        head.className = "panel-head";
+        const copy = document.createElement("div");
+        const title = document.createElement("h4");
+        title.textContent = resultSet.name || `Result Set ${index + 1}`;
+        const blurb = document.createElement("p");
+        blurb.className = "panel-copy";
+        blurb.textContent = `${Array.isArray(resultSet.rows) ? resultSet.rows.length : 0} row(s) returned.`;
+        copy.appendChild(title);
+        copy.appendChild(blurb);
+        head.appendChild(copy);
+        card.appendChild(head);
+        card.appendChild(renderRowsTable(resultSet.rows || []));
+        resultSetsBox.appendChild(card);
+      }
+    }
+
+    function renderResultSetTables(resultSetTables) {
+      resultSetsBox.innerHTML = "";
+      resultSetsSection.hidden = !Array.isArray(resultSetTables) || resultSetTables.length === 0;
+      for (const [index, resultSet] of resultSetTables.entries()) {
+        const card = document.createElement("section");
+        card.className = "subsection-card";
+        const head = document.createElement("div");
+        head.className = "panel-head";
+        const copy = document.createElement("div");
+        const title = document.createElement("h4");
+        title.textContent = resultSet.name || `Result Set ${index + 1}`;
+        const blurb = document.createElement("p");
+        blurb.className = "panel-copy";
+        blurb.textContent = `${resultSet.row_count || 0} row(s) returned.`;
+        copy.appendChild(title);
+        copy.appendChild(blurb);
+        head.appendChild(copy);
+        card.appendChild(head);
+        const wrap = document.createElement("div");
+        wrap.className = "table-wrap";
+        wrap.innerHTML = resultSet.html || "";
+        card.appendChild(wrap);
+        resultSetsBox.appendChild(card);
+      }
+    }
+
+    async function loadProcedureParams(button) {
+      let procedureParams = [];
+      try {
+        procedureParams = JSON.parse(button.dataset.procedureParams || "[]");
+      } catch (error) {
+        procedureParams = [];
+      }
+      if ((button.dataset.objectKind || "") !== "PROCEDURE" && (button.dataset.objectKind || "") !== "FUNCTION") {
+        return procedureParams;
+      }
+      if (procedureParams.length > 0) {
+        return procedureParams;
+      }
+
+      const params = new URLSearchParams({
+        service_path: button.dataset.servicePath || "",
+        schema_path: button.dataset.schemaPath || "",
+        object_path: button.dataset.objectPath || "",
+        object_kind: button.dataset.objectKind || "",
+      });
+      const response = await fetch(`{{ url_for('admin_restapidb_service_detail') }}?${params.toString()}`, {
+        credentials: "same-origin",
+      });
+      const result = await response.json();
+      if (!response.ok || !result.ok) {
+        throw new Error(result.error || `HTTP ${response.status}`);
+      }
+      procedureParams = Array.isArray(result.procedure_params) ? result.procedure_params : [];
+      button.dataset.procedureParams = JSON.stringify(procedureParams);
+      return procedureParams;
+    }
+
+    async function openDialog(button) {
+      resetResult();
+      const paramNames = (button.dataset.paramNames || "").split(",").filter(Boolean);
+      let procedureParams = [];
+      try {
+        procedureParams = await loadProcedureParams(button);
+      } catch (error) {
+        statusBox.className = "result-status result-status-error";
+        statusBox.textContent = "Failed";
+        errorBox.hidden = false;
+        errorBox.textContent = error.message;
+        dialog.showModal();
+        return;
+      }
+      endpointTemplate.value = button.dataset.endpointTemplate || "";
+      servicePath.value = button.dataset.servicePath || "";
+      objectKind.value = button.dataset.objectKind || "VIEW";
+      authRequired.value = button.dataset.authRequired || "Not Required";
+      authApp.value = button.dataset.authApp || "";
+      authPath.value = button.dataset.authPath || "/authentication";
+      target.textContent = button.dataset.endpointTemplate || "REST endpoint";
+      buildParamInputs(paramNames);
+      buildProcedureInputs(procedureParams);
+      authFields.hidden = (button.dataset.authRequired || "") !== "Required";
+      authUsername.required = !authFields.hidden;
+      authPassword.required = !authFields.hidden;
+      dialog.showModal();
+      requestSummary.textContent = button.dataset.endpointTemplate || "REST endpoint";
+      responseSummary.textContent = (button.dataset.authRequired || "Not Required") === "Required"
+        ? "Authentication required"
+        : "Public service";
+
+      if (paramNames.length > 0) {
+        const firstInput = paramGrid.querySelector("input");
+        if (firstInput) firstInput.focus();
+      } else if (procedureParams.length > 0) {
+        const firstProcedureInput = procedureBody.querySelector("input:not([disabled])");
+        if (firstProcedureInput) firstProcedureInput.focus();
+      } else if (!authFields.hidden) {
+        authUsername.focus();
+      }
+    }
+
+    function bindButtons() {
+      for (const button of document.querySelectorAll(".service-test-button")) {
+        button.addEventListener("click", () => {
+          void openDialog(button);
+        });
+      }
+    }
+    bindButtons();
+
+    closeButton.addEventListener("click", () => dialog.close());
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      resetResult();
+      submitButton.disabled = true;
+      statusBox.className = "result-status result-status-running";
+      statusBox.textContent = "Executing";
+
+      const formData = new FormData(form);
+      const pathParams = {};
+      const procedureValues = {};
+      for (const [key, value] of formData.entries()) {
+        if (key.startsWith("path_param:")) {
+          pathParams[key.split(":")[1]] = value;
+        }
+        if (key.startsWith("procedure_param:")) {
+          procedureValues[key.split(":")[1]] = value;
+        }
+      }
+      const queryString = formData.get("query_string") || "";
+      const requestPath = `${endpointTemplate.value}${queryString ? `?${queryString}` : ""}`;
+      requestSummary.textContent = objectKind.value === "PROCEDURE"
+        ? `POST ${endpointTemplate.value}`
+        : requestPath;
+      responseSummary.textContent = objectKind.value === "PROCEDURE"
+        ? "Executing REST procedure"
+        : (authFields.hidden ? "Submitting public GET" : "Authenticating and fetching JSON");
+
+      try {
+        const response = await fetch("{{ url_for('admin_test_restapidb_service') }}", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            endpoint_template: endpointTemplate.value,
+            service_path: servicePath.value,
+            object_kind: objectKind.value,
+            auth_required: authRequired.value,
+            auth_app: authApp.value,
+            auth_path: authPath.value,
+            auth_username: formData.get("auth_username") || "",
+            auth_password: formData.get("auth_password") || "",
+            query_string: queryString,
+            path_params: pathParams,
+            procedure_values: procedureValues,
+          }),
+        });
+        const result = await response.json();
+        if (!response.ok || !result.ok) {
+          throw new Error(result.error || `HTTP ${response.status}`);
+        }
+        statusBox.className = "result-status result-status-success";
+        statusBox.textContent = "Success";
+        responseSummary.textContent = `HTTP ${result.status_code} ${result.content_type || ""}`.trim();
+        metaBox.hidden = false;
+        metaBox.textContent = `${result.request_method || "GET"} ${result.status_code} ${result.content_type || ""} ${result.query_string ? `?${result.query_string}` : ""}`.trim();
+        if (result.request_method === "POST" && result.request_payload && Object.keys(result.request_payload).length > 0) {
+          requestSummary.textContent = `${result.request_method} ${endpointTemplate.value} ${JSON.stringify(result.request_payload)}`;
+        }
+        if (result.out_parameters && Object.keys(result.out_parameters).length > 0) {
+          outSection.hidden = false;
+          renderKeyValueGrid(outGrid, result.out_parameters);
+        }
+        if (Array.isArray(result.result_set_tables) && result.result_set_tables.length > 0) {
+          renderResultSetTables(result.result_set_tables);
+        } else if (Array.isArray(result.result_sets) && result.result_sets.length > 0) {
+          renderResultSets(result.result_sets);
+        }
+        const shouldShowRawBody = !(Array.isArray(result.result_sets) && result.result_sets.length > 0)
+          && !(result.out_parameters && Object.keys(result.out_parameters).length > 0);
+        outputBox.hidden = !shouldShowRawBody;
+        outputBox.textContent = result.body || "";
+      } catch (error) {
+        statusBox.className = "result-status result-status-error";
+        statusBox.textContent = "Failed";
+        responseSummary.textContent = "Execution error";
+        errorBox.hidden = false;
+        errorBox.textContent = error.message;
+      } finally {
+        submitButton.disabled = false;
+      }
+    });
+
+  })();
+</script>
+{% elif active_slug == "show-grants" %}
+<section class="grant-groups">
+  {% for grant_group in grant_groups %}
+  <article class="panel grant-group-panel">
+    <div class="panel-head grant-group-head">
+      <div class="grant-group-copy">
+        <h4>{{ grant_group.title }}</h4>
+        <p class="panel-copy">{{ grant_group.summary }}</p>
+      </div>
+      <div class="metric-card grant-group-metric">
+        <span>Items</span>
+        <strong>{{ grant_group["items"] | length }}</strong>
+      </div>
+    </div>
+    {% if grant_group["items"] %}
+    {% if grant_group.slug == "special" %}
+    <div class="special-grant-list">
+      {% for grant_item in grant_group["items"] %}
+      <article class="special-grant-card">
+        <div class="special-grant-head">
+          <strong>{{ grant_item.privilege }}</strong>
+          {% if grant_item.options %}
+          <span class="table-badge table-badge-warn">{{ grant_item.options }}</span>
+          {% endif %}
+        </div>
+        <div class="special-grant-meta">
+          <span><strong>Scope</strong> <code>{{ grant_item.scope }}</code></span>
+          <span><strong>Target</strong> <code>{{ grant_item.target }}</code></span>
+        </div>
+        <code class="grant-statement">{{ grant_item.raw }}</code>
+      </article>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="table-wrap">
+      <table class="data-table grant-table">
+        <thead>
+          <tr>
+            <th>Privilege</th>
+            <th>Scope</th>
+            <th>Target</th>
+            <th>Statement</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for grant_item in grant_group["items"] %}
+          <tr>
+            <td>{{ grant_item.privilege }}</td>
+            <td><code>{{ grant_item.scope }}</code></td>
+            <td><code>{{ grant_item.target }}</code></td>
+            <td><code class="grant-statement">{{ grant_item.raw }}</code></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+    {% else %}
+    <p class="panel-copy">No grant entries in this group.</p>
+    {% endif %}
+  </article>
+  {% endfor %}
+</section>
+<section class="panel panel-soft grant-note-panel">
+  <div class="panel-head">
+    <div>
+      <h4>Role Detection Input</h4>
+      <p class="panel-copy">These grouped statements are the grants captured at login and used for role detection.</p>
+    </div>
+  </div>
+</section>
+{% else %}
+<section class="content-grid">
+  <article class="panel">
+    <h4>Available Actions</h4>
+    <ul class="action-list">
+      {% for item in page["items"] %}
+      <li>{{ item }}</li>
+      {% endfor %}
+    </ul>
+  </article>
+
+  <article class="panel panel-soft">
+    <h4>Grant Snapshot</h4>
+    <div class="grant-list">
+      {% for grant in grants[:6] %}
+      <code>{{ grant }}</code>
+      {% else %}
+      <p>No grants captured in session.</p>
+      {% endfor %}
+    </div>
+  </article>
+</section>
+{% endif %}
+{% endblock %}

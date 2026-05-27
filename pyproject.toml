@@ -1,0 +1,5 @@
+[project]
+name = "mysql-rest-console"
+version = "1.0.0"
+requires-python = ">=3.12"
+dependencies = []

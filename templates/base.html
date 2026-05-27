@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ title if title else "MySQL REST Console" }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+  <div class="app-shell {% if not current_user %}app-shell-login{% endif %}">
+    <aside class="sidebar {% if not current_user %}sidebar-empty{% endif %}">
+      {% if current_user %}
+      <div class="brand-mark">
+        <div class="brand-orb"></div>
+        <div>
+          <p class="brand-kicker">MySQL</p>
+          <h1>REST Console</h1>
+        </div>
+      </div>
+      <nav class="menu">
+        {% for item in current_menu %}
+        <a
+          class="menu-link {% if active_slug == item.slug %}is-active{% endif %}"
+          href="{{ url_for('dashboard', slug=item.slug) }}"
+        >
+          {{ item.label }}
+        </a>
+        {% endfor %}
+      </nav>
+      <div class="sidebar-foot">
+        <p class="role-chip">{{ current_role_label }}</p>
+        <p class="user-name">{{ current_user.username }}</p>
+      </div>
+      {% else %}
+      <div class="sidebar-blank"></div>
+      {% endif %}
+    </aside>
+
+    <main class="main-panel {% if not current_user %}main-panel-login{% endif %}">
+      {% if current_user %}
+      <header class="topbar">
+        <div>
+          <p class="topbar-label">MySQL REST Console</p>
+          <h2>{{ page.title }}</h2>
+        </div>
+        <div class="topbar-actions">
+          <div class="avatar">{{ initials }}</div>
+          <form action="{{ url_for('logout') }}" method="post">
+            <button class="ghost-button" type="submit">Logout</button>
+          </form>
+        </div>
+      </header>
+      {% endif %}
+
+      {% if current_user %}
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+          <div class="flash-stack">
+            {% for category, message in messages %}
+            <div class="flash flash-{{ category }}">{{ message }}</div>
+            {% endfor %}
+          </div>
+          {% endif %}
+        {% endwith %}
+      {% endif %}
+
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</body>
+</html>
