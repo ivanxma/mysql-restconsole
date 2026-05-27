@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
+import mysql.connector
+
 from modules.cache_store import get_cached_value, invalidate_cached_values, set_cached_value
 from modules.catalog import REST_ADMIN_ROLES, SPECIAL_PRIV_CATEGORIES, SPECIAL_ROLE_CATALOG, SYSTEM_USER_PREFIXES, SYSTEM_USERS
 from modules.app_config import CONFIG, get_runtime_config
@@ -62,6 +64,98 @@ def mysqlsh_uri(username: str, password: str) -> str:
 
     runtime_config = get_runtime_config()
     return f"mysql://{quote(username)}:{quote(password)}@{runtime_config.host}:{runtime_config.port}"
+
+
+def _connector_kwargs(username: str, password: str) -> dict[str, Any]:
+    from flask import has_request_context, session
+
+    if has_request_context():
+        profile = session.get("connection_profile", {})
+        if profile.get("mode") == "socket":
+            socket_path = str(profile.get("socket", "")).strip()
+            if not socket_path.startswith("/"):
+                socket_path = str((Path(__file__).resolve().parent.parent / socket_path).resolve())
+            return {
+                "unix_socket": socket_path,
+                "user": username,
+                "password": password,
+                "autocommit": True,
+                "connection_timeout": get_runtime_config().connect_timeout,
+            }
+
+    runtime_config = get_runtime_config()
+    return {
+        "host": runtime_config.host,
+        "port": runtime_config.port,
+        "user": username,
+        "password": password,
+        "autocommit": True,
+        "connection_timeout": runtime_config.connect_timeout,
+    }
+
+
+def _split_sql_statements(sql: str) -> list[str]:
+    statements: list[str] = []
+    current: list[str] = []
+    quote_char = ""
+    escape = False
+    for char in sql:
+        current.append(char)
+        if escape:
+            escape = False
+            continue
+        if char == "\\":
+            escape = True
+            continue
+        if quote_char:
+            if char == quote_char:
+                quote_char = ""
+            continue
+        if char in {"'", '"', "`"}:
+            quote_char = char
+            continue
+        if char == ";":
+            statement = "".join(current).strip().rstrip(";").strip()
+            if statement:
+                statements.append(statement)
+            current = []
+    tail = "".join(current).strip()
+    if tail:
+        statements.append(tail)
+    return statements
+
+
+def _run_connector_sql(
+    sql: str,
+    *,
+    username: str,
+    password: str,
+    raw_output: bool = False,
+) -> list[dict[str, Any]] | str:
+    connection = mysql.connector.connect(**_connector_kwargs(username, password))
+    try:
+        rows: list[dict[str, Any]] = []
+        raw_lines: list[str] = []
+        for statement in _split_sql_statements(sql):
+            cursor = connection.cursor(dictionary=True, buffered=True)
+            try:
+                cursor.execute(statement)
+                if cursor.with_rows:
+                    fetched = [dict(row) for row in cursor.fetchall()]
+                    if raw_output:
+                        if cursor.column_names:
+                            raw_lines.append("\t".join(str(name) for name in cursor.column_names))
+                        for row in fetched:
+                            raw_lines.append("\t".join("" if value is None else str(value) for value in row.values()))
+                    else:
+                        rows.extend(fetched)
+            finally:
+                cursor.close()
+        if raw_output:
+            return "\n".join(raw_lines)
+        return rows
+    finally:
+        connection.close()
 
 
 def _manage_tunnel(action: str, runtime_config) -> None:
@@ -129,6 +223,11 @@ def run_mysqlsh(
     password: str,
     raw_output: bool = False,
 ) -> list[dict[str, Any]] | str:
+    try:
+        return _run_connector_sql(sql, username=username, password=password, raw_output=raw_output)
+    except mysql.connector.Error as exc:
+        raise RuntimeError(str(exc)) from exc
+
     cmd = [
         CONFIG.mysqlsh_path,
         "--sql",

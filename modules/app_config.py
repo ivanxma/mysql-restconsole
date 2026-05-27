@@ -26,7 +26,7 @@ class AppConfig:
     ssh_jump_user: str = os.getenv("MRS_WEBAPP_SSH_JUMP_USER", "opc")
     api_port: int = int(os.getenv("MRS_WEBAPP_API_PORT", "8443"))
     connect_timeout: int = int(os.getenv("MRS_WEBAPP_DB_CONNECT_TIMEOUT", "5"))
-    mysqlsh_path: str = os.getenv("MRS_WEBAPP_MYSQLSH", "/Users/ivanma/shell/bin/mysqlsh")
+    mysqlsh_path: str = os.getenv("MRS_WEBAPP_MYSQLSH", "mysqlsh")
 
 
 CONFIG = AppConfig()
