@@ -1006,6 +1006,8 @@ def register_routes(app: Flask) -> None:
             confirm = request.form.get("confirm_password", "")
             if not password or password != confirm:
                 flash("Password confirmation does not match.", "error")
+            elif user["username"] == "localadmin" and password == "localadmin":
+                flash("Choose a new password different from the bootstrap password.", "error")
             else:
                 try:
                     change_local_password(user["username"], password)
