@@ -1009,7 +1009,16 @@ def register_routes(app: Flask) -> None:
                     return redirect(url_for("login"))
                 except Exception as exc:
                     flash(f"Password change failed: {exc}", "error")
-        return render_template("login.html", force_password_change=True, login_username=user["username"])
+        return render_template(
+            "login.html",
+            force_password_change=True,
+            login_username=user["username"],
+            page={
+                "title": "Change Password",
+                "summary": "Change the local bootstrap password before opening the console.",
+            },
+            initials=session.get("initials", infer_initials(user["username"])),
+        )
 
     @app.post("/profiles/login")
     def profile_login():
