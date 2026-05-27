@@ -989,6 +989,11 @@ def register_routes(app: Flask) -> None:
                 return redirect(url_for("change_password"))
             return redirect(url_for("dashboard", slug=role_home(role)))
 
+        user = current_user()
+        if user and session.get("force_password_change"):
+            return redirect(url_for("change_password"))
+        if user:
+            return redirect(url_for("dashboard", slug=role_home(user["role"])))
         return render_template("login.html")
 
     @app.route("/change-password", methods=["GET", "POST"])

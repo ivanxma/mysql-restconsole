@@ -15,7 +15,7 @@
           <div class="brand-orb"></div>
           <div>
             <p class="topbar-label">MySQL REST Console</p>
-            <h2>{{ page.title }}</h2>
+            <h2>{{ page.title if page is defined else "MySQL REST Console" }}</h2>
           </div>
         </div>
         <div class="topbar-actions">
