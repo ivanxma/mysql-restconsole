@@ -67,13 +67,27 @@ select_python() {
   printf 'python3\n'
 }
 
+existing_runtime_value() {
+  local key="$1"
+  [[ -f "${APP_DIR}/.runtime.env" ]] || return 0
+  awk -F= -v key="$key" '$1 == key {print substr($0, index($0, "=") + 1); exit}' "${APP_DIR}/.runtime.env"
+}
+
 write_runtime_env() {
   if [[ -z "$CONFIGDB_PASSWORD" ]]; then
     CONFIGDB_PASSWORD="$(openssl rand -base64 32 | tr -d '\n')"
   fi
+  local saved_deploy_mode="$DEPLOY_MODE"
+  if [[ "$DEPLOY_MODE" == "none" ]]; then
+    local existing_deploy_mode
+    existing_deploy_mode="$(existing_runtime_value DEPLOY_MODE)"
+    if [[ -n "$existing_deploy_mode" && "$existing_deploy_mode" != "none" ]]; then
+      saved_deploy_mode="$existing_deploy_mode"
+    fi
+  fi
   cat > "${APP_DIR}/.runtime.env" <<EOF
 OS_FAMILY=${OS_FAMILY}
-DEPLOY_MODE=${DEPLOY_MODE}
+DEPLOY_MODE=${saved_deploy_mode}
 APP_HOST=${APP_HOST}
 HTTP_PORT=${HTTP_PORT}
 HTTPS_PORT=${HTTPS_PORT}
@@ -136,12 +150,12 @@ start_embedded_mysql_if_needed() {
 
 bootstrap_embedded_mysql() {
   mkdir -p "${APP_DIR}/.embedded/mysql-server" "${APP_DIR}/.data/run" "${APP_DIR}/.data/log" "${APP_DIR}/.data/tmp" "${APP_DIR}/etc"
-  if [[ -z "$MYSQL_SERVER_URL_LINUX_X86" ]]; then
-    echo "MRS_CONSOLE_MYSQL_SERVER_URL_LINUX_X86 is not set; skipping embedded MySQL download." >&2
-    setup_local_admin_profile_only
-    return
-  fi
   if [[ ! -x "${APP_DIR}/.embedded/mysql-server/current/bin/mysqld" ]]; then
+    if [[ -z "$MYSQL_SERVER_URL_LINUX_X86" ]]; then
+      echo "MRS_CONSOLE_MYSQL_SERVER_URL_LINUX_X86 is not set; skipping embedded MySQL download." >&2
+      setup_local_admin_profile_only
+      return
+    fi
     local archive="${APP_DIR}/.embedded/mysql-server/mysql-${MYSQL_SERVER_VERSION}.tar.xz"
     curl -L --fail -o "$archive" "$MYSQL_SERVER_URL_LINUX_X86"
     tar -xf "$archive" -C "${APP_DIR}/.embedded/mysql-server"
