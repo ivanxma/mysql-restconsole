@@ -44,5 +44,5 @@ def invalidate_cached_values(*prefixes: str) -> None:
         RESTAPIDB_CACHE.clear()
         return
     for cache_key in list(RESTAPIDB_CACHE.keys()):
-        if any(cache_key.startswith(prefix) for prefix in prefixes):
+        if any(cache_key.startswith(prefix) or f":{prefix}" in cache_key for prefix in prefixes):
             RESTAPIDB_CACHE.pop(cache_key, None)

@@ -5,6 +5,7 @@ from typing import Any
 
 from flask import Flask, flash, jsonify, redirect, render_template, request, session, url_for
 
+from modules.cache_store import invalidate_cached_values
 from modules.catalog import OBJECT_PRIVILEGES, PAGE_CONTENT, USER_TABS, GRANT_TABS, RESTAPIDB_TABS
 from modules.app_config import active_login_profile, default_login_profile
 from modules.local_auth import (
@@ -119,6 +120,7 @@ def _store_rest_sql_state(slug: str, *, sql: str = "", result: str = "", error: 
 def _execute_generated_rest_sql(*, slug: str, sql: str, redirect_args: dict[str, str]):
     try:
         output = run_admin_sql(sql, raw_output=True)
+        invalidate_cached_values("rest-services:", "rest-objects:", "base-tables:", "columns:", "procedure-params:")
         result = str(output).strip() or "SQL executed successfully."
         _store_rest_sql_state(slug, sql=sql, result=result)
         flash("SQL executed with the active profile session.", "info")
