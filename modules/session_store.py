@@ -56,6 +56,8 @@ def current_user() -> dict[str, Any] | None:
     menu = role_menu(role)
     if role == "admin" and not session.get("connection_profile"):
         menu = [item for item in menu if item.get("label") != "RestAPI"]
+    if role == "local_user" and not session.get("connection_profile"):
+        menu = []
     return {
         "username": session["username"],
         "role": role,
@@ -65,6 +67,8 @@ def current_user() -> dict[str, Any] | None:
 
 
 def slug_allowed(role: str, slug: str) -> bool:
+    if role == "local_user" and slug == "profile-login":
+        return True
     user = current_user()
     menu = user["menu"] if user else role_menu(role)
     return any(item.get("slug") == slug for item in _menu_items(menu))

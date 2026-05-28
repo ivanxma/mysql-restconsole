@@ -43,6 +43,7 @@
           </div>
         </details>
       </header>
+      {% if current_menu %}
       <nav class="menu">
         {% for item in current_menu %}
         {% if item.children is defined %}
@@ -72,6 +73,7 @@
           }
         })();
       </script>
+      {% endif %}
       {% endif %}
 
       {% if current_user %}

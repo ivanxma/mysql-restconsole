@@ -3,6 +3,7 @@ from __future__ import annotations
 
 ROLE_LABELS = {
     "admin": "Admin",
+    "db_admin": "DB Admin",
     "local_user": "General User",
     "rest_admin": "Rest Admin",
     "test_user": "Test User",
@@ -37,7 +38,22 @@ ROLE_MENUS = {
     ],
     "local_user": [
         {"slug": "profile-login", "label": "Profile Login"},
-        {"slug": "show-grants", "label": "Show Grants"},
+    ],
+    "db_admin": [
+        {
+            "label": "RestAPI",
+            "children": [
+                {"slug": "user", "label": "User"},
+                {"slug": "granting-privileges", "label": "Granting Privileges"},
+                {"slug": "restapidb", "label": "RestAPIDB"},
+                {"slug": "list-restful-services", "label": "List Restful Services"},
+                {"slug": "create-restful-service", "label": "Create Restful Service"},
+                {"slug": "expose-db-as-service", "label": "Expose DB as Service"},
+                {"slug": "expose-table-as-service", "label": "Expose Table as Service"},
+                {"slug": "expose-sp-as-service", "label": "Expose SP as Service"},
+                {"slug": "show-grants", "label": "Show Grants"},
+            ],
+        },
     ],
     "rest_admin": [
         {

@@ -67,11 +67,15 @@ from modules.session_store import admin_subtabs, current_user, default_subtab, i
 
 
 def _can_access_rest_service_console(user: dict[str, Any] | None) -> bool:
-    return bool(user and user["role"] in {"admin", "rest_admin", "test_user"})
+    return bool(user and user["role"] in {"admin", "db_admin", "rest_admin", "test_user"})
 
 
 def _can_manage_rest_api(user: dict[str, Any] | None) -> bool:
-    return bool(user and user["role"] in {"admin", "rest_admin"})
+    return bool(user and user["role"] in {"admin", "db_admin", "rest_admin"})
+
+
+def _can_manage_profile_database(user: dict[str, Any] | None) -> bool:
+    return bool(user and user["role"] in {"admin", "db_admin"})
 
 
 REST_API_PAGE_SLUGS = {
@@ -588,7 +592,7 @@ def register_routes(app: Flask) -> None:
     @app.post("/admin/users/create")
     def admin_create_user():
         user = current_user()
-        if not user or user["role"] != "admin":
+        if not _can_manage_profile_database(user):
             return redirect(url_for("login"))
 
         username = request.form.get("username", "").strip()
@@ -614,7 +618,7 @@ def register_routes(app: Flask) -> None:
     @app.post("/admin/users/delete")
     def admin_delete_users():
         user = current_user()
-        if not user or user["role"] != "admin":
+        if not _can_manage_profile_database(user):
             return redirect(url_for("login"))
 
         selected_keys = request.form.getlist("selected_users")
@@ -633,7 +637,7 @@ def register_routes(app: Flask) -> None:
     @app.post("/admin/grants/object")
     def admin_grant_object_priv():
         user = current_user()
-        if not user or user["role"] != "admin":
+        if not _can_manage_profile_database(user):
             return redirect(url_for("login"))
 
         schema_name = request.form.get("schema_name", "").strip()
@@ -656,7 +660,7 @@ def register_routes(app: Flask) -> None:
     @app.post("/admin/grants/special")
     def admin_grant_special_priv():
         user = current_user()
-        if not user or user["role"] != "admin":
+        if not _can_manage_profile_database(user):
             return redirect(url_for("login"))
 
         category = request.form.get("category", default_special_priv_category()).strip()
@@ -1027,6 +1031,7 @@ def register_routes(app: Flask) -> None:
             role = "admin" if local_user["is_admin"] else "local_user"
             session["username"] = username
             session["role"] = role
+            session["local_role"] = role
             session["initials"] = infer_initials(username)
             session["grants"] = []
             session["local_login_complete"] = True
@@ -1101,9 +1106,13 @@ def register_routes(app: Flask) -> None:
             db_role = classify_role(username, grants)
             session["db_username"] = username
             session["db_role"] = db_role
-            session["role"] = db_role if user["role"] != "admin" else "admin"
+            if session.get("local_role") == "admin":
+                session["role"] = "admin"
+            else:
+                session["role"] = "db_admin" if db_role == "admin" else db_role
             session["grants"] = grants
             flash(f"Connected to profile {login_profile['label']}.", "info")
+            return redirect(url_for("dashboard", slug=role_home(session["role"])))
         except Exception as exc:
             flash(f"Profile login failed: {exc}", "error")
         return redirect(url_for("dashboard", slug="profile-login"))
@@ -1221,7 +1230,19 @@ def register_routes(app: Flask) -> None:
                     return login_redirect_response(f"Session failed while loading RestAPIDB: {exc}")
                 return login_redirect_response(f"Session failed while loading page: {exc}")
 
-        if user["role"] in {"admin", "rest_admin"} and slug in REST_API_PAGE_SLUGS:
+        if user["role"] == "db_admin" and slug in {"user", "granting-privileges", "restapidb"}:
+            try:
+                context.update(_dashboard_context_for_admin(slug))
+            except Exception as exc:
+                if slug == "user":
+                    return login_redirect_response(f"Session failed while loading users: {exc}")
+                if slug == "granting-privileges":
+                    return login_redirect_response(f"Session failed while loading grants: {exc}")
+                if slug == "restapidb":
+                    return login_redirect_response(f"Session failed while loading RestAPIDB: {exc}")
+                return login_redirect_response(f"Session failed while loading page: {exc}")
+
+        if user["role"] in {"admin", "db_admin", "rest_admin"} and slug in REST_API_PAGE_SLUGS:
             try:
                 context.update(_dashboard_context_for_rest_admin(slug))
             except Exception as exc:
@@ -1231,7 +1252,7 @@ def register_routes(app: Flask) -> None:
                     context=context,
                 )
 
-        if user["role"] in {"admin", "rest_admin", "test_user"} and slug == "list-restful-services":
+        if user["role"] in {"admin", "db_admin", "rest_admin", "test_user"} and slug == "list-restful-services":
             context["subtabs"] = []
             try:
                 context["rest_services"] = list_restapidb_services()
