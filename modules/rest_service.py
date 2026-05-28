@@ -391,7 +391,19 @@ def normalize_rest_response(parsed_body: Any, *, object_kind: str) -> dict[str, 
         if isinstance(parsed_body, list):
             normalized["result_sets"] = [{"name": "Rows", "rows": parsed_body}]
         elif isinstance(parsed_body, dict):
-            normalized["result_sets"] = [{"name": "Response", "rows": [parsed_body]}]
+            items = parsed_body.get("items")
+            if isinstance(items, list):
+                result_set: dict[str, Any] = {
+                    "name": "Items",
+                    "rows": items,
+                }
+                metadata = parsed_body.get("_metadata")
+                if metadata is not None:
+                    result_set["_metadata"] = metadata
+                    result_set["items"] = items
+                normalized["result_sets"] = [result_set]
+            else:
+                normalized["result_sets"] = [{"name": "Response", "rows": [parsed_body]}]
         return normalized
 
     if isinstance(parsed_body, list):
@@ -665,10 +677,13 @@ def list_restapidb_services(schema_name: str = "restapidb") -> list[dict[str, st
                 database_name, source_object = rest_routine_map[source_object]
 
         endpoint = f"{service_path}{schema_path}{object_path}" if object_path else f"{service_path}{schema_path}"
+        runtime_config = get_runtime_config()
+        endpoint_url = f"https://{runtime_config.api_host}:{runtime_config.api_port}{endpoint}"
         parameter_names = extract_endpoint_parameters(endpoint)
         results.append(
             {
                 "endpoint": endpoint,
+                "endpoint_url": endpoint_url,
                 "database": database_name or "-",
                 "schema_path": schema_path or "/",
                 "rest_schema_name": schema_path.lstrip("/") or "-",

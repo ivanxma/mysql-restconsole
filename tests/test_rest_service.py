@@ -1,10 +1,31 @@
 import unittest
 from unittest.mock import patch
 
-from modules.rest_service import get_rest_procedure_details, get_rest_service_auth_details
+from modules.rest_service import get_rest_procedure_details, get_rest_service_auth_details, normalize_rest_response
 
 
 class RestServiceTests(unittest.TestCase):
+    def test_non_procedure_items_response_becomes_result_rows(self) -> None:
+        response = normalize_rest_response(
+            {
+                "items": [
+                    {"id": 1, "name": "London"},
+                    {"id": 2, "name": "Tokyo"},
+                ],
+                "limit": 25,
+            },
+            object_kind="VIEW",
+        )
+
+        self.assertEqual(response["result_sets"][0]["name"], "Items")
+        self.assertEqual(
+            response["result_sets"][0]["rows"],
+            [
+                {"id": 1, "name": "London"},
+                {"id": 2, "name": "Tokyo"},
+            ],
+        )
+
     def test_auth_details_use_metadata_sql(self) -> None:
         captured_sql = []
 

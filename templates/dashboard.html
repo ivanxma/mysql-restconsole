@@ -1291,13 +1291,29 @@
           <th>Service Enabled</th>
           <th>Schema Enabled</th>
           <th>Object Enabled</th>
-          <th>Test</th>
         </tr>
       </thead>
       <tbody id="rest-service-table-body">
         {% for service_item in rest_services %}
         <tr>
-          <td><code>{{ service_item.endpoint }}</code></td>
+          <td>
+            <a
+              class="endpoint-link service-test-button"
+              href="{{ service_item.endpoint_url }}"
+              target="_blank"
+              rel="noopener noreferrer"
+              data-endpoint-template="{{ service_item.endpoint }}"
+              data-service-path="{{ service_item.service }}"
+              data-object-kind="{{ service_item.object_kind }}"
+              data-schema-path="{{ service_item.schema_path }}"
+              data-object-path="{{ service_item.object_path }}"
+              data-auth-required="{{ service_item.auth_required }}"
+              data-auth-app="{{ service_item.auth_app_name }}"
+              data-auth-path="{{ service_item.auth_path }}"
+              data-param-names="{{ (service_item.param_names or []) | join(',') }}"
+              data-procedure-params='{{ service_item.procedure_params | tojson }}'
+            >{{ service_item.endpoint }}</a>
+          </td>
           <td>{{ service_item.database }}</td>
           <td><code>/{{ service_item.rest_schema_name }}</code></td>
           <td><code>{{ service_item.service }}</code></td>
@@ -1322,34 +1338,28 @@
           <td>{{ service_item.service_enabled }}</td>
           <td>{{ service_item.schema_enabled }}</td>
           <td>{{ service_item.object_enabled }}</td>
-          <td>
-            <button
-              class="ghost-button service-test-button"
-              type="button"
-              data-endpoint-template="{{ service_item.endpoint }}"
-              data-service-path="{{ service_item.service }}"
-              data-object-kind="{{ service_item.object_kind }}"
-              data-schema-path="{{ service_item.schema_path }}"
-              data-object-path="{{ service_item.object_path }}"
-              data-auth-required="{{ service_item.auth_required }}"
-              data-auth-app="{{ service_item.auth_app_name }}"
-              data-auth-path="{{ service_item.auth_path }}"
-              data-param-names="{{ (service_item.param_names or []) | join(',') }}"
-              data-procedure-params='{{ service_item.procedure_params | tojson }}'
-            >
-              Test
-            </button>
-          </td>
         </tr>
         {% else %}
         <tr>
-          <td colspan="14">No published REST services were found.</td>
+          <td colspan="13">No published REST services were found.</td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 </section>
+<dialog class="field-value-dialog" id="field-value-dialog">
+  <div class="field-value-content">
+    <div class="panel-head">
+      <div>
+        <h4 id="field-value-title">Field Value</h4>
+        <p class="panel-copy" id="field-value-meta"></p>
+      </div>
+      <button class="ghost-button" type="button" id="field-value-close">Close</button>
+    </div>
+    <pre class="result-output" id="field-value-output"></pre>
+  </div>
+</dialog>
 <section class="service-test-panel" id="service-test-dialog" hidden>
   <form class="service-test-form" id="service-test-form">
     <div class="panel-head">
@@ -1467,6 +1477,11 @@
     const tabsBox = document.getElementById("service-test-tabs");
     const tabList = document.getElementById("service-test-tab-list");
     const tabPanels = document.getElementById("service-test-tab-panels");
+    const fieldDialog = document.getElementById("field-value-dialog");
+    const fieldDialogClose = document.getElementById("field-value-close");
+    const fieldValueTitle = document.getElementById("field-value-title");
+    const fieldValueMeta = document.getElementById("field-value-meta");
+    const fieldValueOutput = document.getElementById("field-value-output");
 
     function resetResult() {
       statusBox.className = "result-status result-status-idle";
@@ -1601,19 +1616,47 @@
       thead.appendChild(headRow);
       table.appendChild(thead);
       const tbody = document.createElement("tbody");
-      for (const row of rows) {
+      rows.forEach((row, rowIndex) => {
         const tr = document.createElement("tr");
         for (const column of columns) {
           const td = document.createElement("td");
           const value = row && typeof row === "object" && !Array.isArray(row) ? row[column] : row;
-          td.textContent = value == null ? "" : typeof value === "string" ? value : JSON.stringify(value);
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "field-value-button";
+          button.textContent = formatCellValue(value);
+          button.title = "Show field value";
+          button.addEventListener("click", () => showFieldValue(column, value, rowIndex + 1));
+          td.appendChild(button);
           tr.appendChild(td);
         }
         tbody.appendChild(tr);
-      }
+      });
       table.appendChild(tbody);
       wrap.appendChild(table);
       return wrap;
+    }
+
+    function formatCellValue(value) {
+      if (value == null) return "";
+      if (typeof value === "string") return value;
+      return JSON.stringify(value);
+    }
+
+    function showFieldValue(column, value, rowNumber) {
+      fieldValueTitle.textContent = column;
+      fieldValueMeta.textContent = `Row ${rowNumber}`;
+      fieldValueOutput.hidden = false;
+      fieldValueOutput.textContent = value == null
+        ? ""
+        : typeof value === "string"
+          ? value
+          : JSON.stringify(value, null, 2);
+      if (typeof fieldDialog.showModal === "function") {
+        fieldDialog.showModal();
+      } else {
+        fieldDialog.setAttribute("open", "open");
+      }
     }
 
     function clearResultTabs() {
@@ -1700,12 +1743,13 @@
 
     function renderResultSets(resultSets) {
       for (const [index, resultSet] of resultSets.entries()) {
+        const rows = resultSet.items || resultSet.rows || [];
         const content = document.createElement("div");
         const blurb = document.createElement("p");
         blurb.className = "panel-copy";
-        blurb.textContent = `${Array.isArray(resultSet.rows) ? resultSet.rows.length : 0} row(s) returned.`;
+        blurb.textContent = `${Array.isArray(rows) ? rows.length : 0} row(s) returned.`;
         content.appendChild(blurb);
-        content.appendChild(renderRowsTable(resultSet.rows || []));
+        content.appendChild(renderRowsTable(rows));
         addResultTab(resultSet.name || `Result Set ${index + 1}`, content);
       }
     }
@@ -1806,12 +1850,18 @@
 
     function bindButtons() {
       for (const button of document.querySelectorAll(".service-test-button")) {
-        button.addEventListener("click", () => {
+        button.addEventListener("click", (event) => {
+          if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+            return;
+          }
+          event.preventDefault();
           void openDialog(button);
         });
       }
     }
     bindButtons();
+
+    fieldDialogClose.addEventListener("click", () => fieldDialog.close());
 
     closeButton.addEventListener("click", () => {
       testPanel.classList.remove("is-open");
@@ -1883,10 +1933,10 @@
         if (result.out_parameters && Object.keys(result.out_parameters).length > 0) {
           addResultTab("OUT Parameters", renderKeyValueGrid(result.out_parameters));
         }
-        if (Array.isArray(result.result_set_tables) && result.result_set_tables.length > 0) {
-          renderResultSetTables(result.result_set_tables);
-        } else if (Array.isArray(result.result_sets) && result.result_sets.length > 0) {
+        if (Array.isArray(result.result_sets) && result.result_sets.length > 0) {
           renderResultSets(result.result_sets);
+        } else if (Array.isArray(result.result_set_tables) && result.result_set_tables.length > 0) {
+          renderResultSetTables(result.result_set_tables);
         }
         if (result.body) {
           addResultTab("Raw Output", renderRawOutput(result.body));
