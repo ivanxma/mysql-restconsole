@@ -35,6 +35,18 @@
   </div>
 </section>
 {% endif %}
+<dialog class="field-value-dialog" id="field-value-dialog">
+  <div class="field-value-content">
+    <div class="panel-head">
+      <div>
+        <h4 id="field-value-title">Field Value</h4>
+        <p class="panel-copy" id="field-value-meta"></p>
+      </div>
+      <button class="ghost-button" type="button" id="field-value-close">Close</button>
+    </div>
+    <pre class="result-output" id="field-value-output"></pre>
+  </div>
+</dialog>
 
 {% if active_slug == "dashboard" %}
 <section class="panel">
@@ -723,13 +735,17 @@
       <div class="table-actions table-actions-left">
         <button class="ghost-button danger-button" type="submit" name="action" value="delete-selected">Delete Selected</button>
       </div>
-      <div class="table-wrap">
+      <div class="table-wrap" data-table-title="Service Paths">
         <table class="data-table">
           <thead>
             <tr>
-              <th>Select</th>
+              <th class="select-column">
+                <label class="inline-check">
+                  <input type="checkbox" data-select-all="selected_service_paths">
+                  <span>Select</span>
+                </label>
+              </th>
               <th>Service Path</th>
-              <th class="action-cell">Action</th>
             </tr>
           </thead>
           <tbody>
@@ -742,16 +758,9 @@
                 </label>
               </td>
               <td><code>{{ service_path }}</code></td>
-              <td class="action-cell">
-                <form action="{{ url_for('rest_admin_create_restful_service') }}" method="post">
-                  <input type="hidden" name="service_name" value="{{ rest_service_form.service_name }}">
-                  <input type="hidden" name="service_path" value="{{ service_path }}">
-                  <button class="icon-action danger-button" type="submit" name="action" value="delete-one" title="Delete {{ service_path }}" aria-label="Delete {{ service_path }}">x</button>
-                </form>
-              </td>
             </tr>
             {% else %}
-            <tr><td colspan="3">No REST service paths exist yet.</td></tr>
+            <tr><td colspan="2">No REST service paths exist yet.</td></tr>
             {% endfor %}
           </tbody>
         </table>
@@ -1349,18 +1358,6 @@
     </table>
   </div>
 </section>
-<dialog class="field-value-dialog" id="field-value-dialog">
-  <div class="field-value-content">
-    <div class="panel-head">
-      <div>
-        <h4 id="field-value-title">Field Value</h4>
-        <p class="panel-copy" id="field-value-meta"></p>
-      </div>
-      <button class="ghost-button" type="button" id="field-value-close">Close</button>
-    </div>
-    <pre class="result-output" id="field-value-output"></pre>
-  </div>
-</dialog>
 <section class="service-test-panel" id="service-test-dialog" hidden>
   <form class="service-test-form" id="service-test-form">
     <div class="panel-head">
@@ -2397,4 +2394,282 @@
   </article>
 </section>
 {% endif %}
+<script>
+  (() => {
+    const fieldDialog = document.getElementById("field-value-dialog");
+    const fieldDialogClose = document.getElementById("field-value-close");
+    const fieldValueTitle = document.getElementById("field-value-title");
+    const fieldValueMeta = document.getElementById("field-value-meta");
+    const fieldValueOutput = document.getElementById("field-value-output");
+    if (!fieldDialog || !fieldDialogClose || !fieldValueTitle || !fieldValueMeta || !fieldValueOutput) return;
+
+    function showStaticFieldValue(column, value, rowNumber) {
+      fieldValueTitle.textContent = column || "Field Value";
+      fieldValueMeta.textContent = rowNumber ? `Row ${rowNumber}` : "";
+      fieldValueOutput.hidden = false;
+      fieldValueOutput.textContent = value || "";
+      if (typeof fieldDialog.showModal === "function") {
+        fieldDialog.showModal();
+      } else {
+        fieldDialog.setAttribute("open", "open");
+      }
+    }
+
+    fieldDialogClose.addEventListener("click", () => fieldDialog.close());
+
+    function createStaticTableIconButton(label, pathData) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "table-tool-button";
+      button.title = label;
+      button.setAttribute("aria-label", label);
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      svg.setAttribute("viewBox", "0 0 24 24");
+      svg.setAttribute("aria-hidden", "true");
+      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      path.setAttribute("d", pathData);
+      svg.appendChild(path);
+      button.appendChild(svg);
+      return button;
+    }
+
+    function csvValue(value) {
+      return `"${String(value == null ? "" : value).replaceAll('"', '""')}"`;
+    }
+
+    function tableToCsv(table) {
+      return Array.from(table.querySelectorAll("tr")).map((row) => {
+        return Array.from(row.children).map((cell) => csvValue(cell.textContent.trim())).join(",");
+      }).join("\n");
+    }
+
+    function downloadStaticTable(table, name) {
+      const safeName = String(name || "table").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "table";
+      const blob = new Blob([tableToCsv(table)], { type: "text/csv;charset=utf-8" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `${safeName}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(link.href);
+    }
+
+    function ensureStaticColgroup(table) {
+      let colgroup = table.querySelector("colgroup");
+      if (!colgroup) {
+        colgroup = document.createElement("colgroup");
+        const columnCount = table.tHead && table.tHead.rows.length ? table.tHead.rows[0].cells.length : 0;
+        for (let index = 0; index < columnCount; index += 1) {
+          colgroup.appendChild(document.createElement("col"));
+        }
+        table.insertBefore(colgroup, table.firstChild);
+      }
+      return colgroup;
+    }
+
+    function cellText(row, columnIndex) {
+      const cell = row.children[columnIndex];
+      return cell ? cell.textContent.trim() : "";
+    }
+
+    function compareText(left, right) {
+      const leftNumber = Number(left);
+      const rightNumber = Number(right);
+      if (left !== "" && right !== "" && Number.isFinite(leftNumber) && Number.isFinite(rightNumber)) {
+        return leftNumber - rightNumber;
+      }
+      return left.localeCompare(right, undefined, { numeric: true, sensitivity: "base" });
+    }
+
+    function sortStaticTable(table, columnIndex, direction) {
+      const tbody = table.tBodies[0];
+      if (!tbody) return;
+      const rows = Array.from(tbody.rows);
+      rows.sort((left, right) => {
+        const result = compareText(cellText(left, columnIndex), cellText(right, columnIndex));
+        return direction === "desc" ? -result : result;
+      });
+      for (const row of rows) tbody.appendChild(row);
+      for (const th of table.tHead.rows[0].cells) {
+        th.removeAttribute("aria-sort");
+        th.classList.remove("is-sorted-asc", "is-sorted-desc");
+      }
+      const th = table.tHead.rows[0].cells[columnIndex];
+      th.setAttribute("aria-sort", direction === "desc" ? "descending" : "ascending");
+      th.classList.add(direction === "desc" ? "is-sorted-desc" : "is-sorted-asc");
+      table.dataset.sortColumn = String(columnIndex);
+      table.dataset.sortDirection = direction;
+    }
+
+    function reorderCells(row, fromIndex, toIndex) {
+      const cells = row.children;
+      if (fromIndex === toIndex || !cells[fromIndex] || !cells[toIndex]) return;
+      const moving = cells[fromIndex];
+      const reference = fromIndex < toIndex ? cells[toIndex].nextSibling : cells[toIndex];
+      row.insertBefore(moving, reference);
+    }
+
+    function moveStaticColumn(table, fromIndex, toIndex) {
+      const colgroup = table.querySelector("colgroup");
+      if (colgroup) reorderCells(colgroup, fromIndex, toIndex);
+      for (const row of table.rows) reorderCells(row, fromIndex, toIndex);
+      table.removeAttribute("data-sort-column");
+      table.removeAttribute("data-sort-direction");
+    }
+
+    function resetStaticTable(table) {
+      const colgroup = table.querySelector("colgroup");
+      if (colgroup) {
+        for (const col of Array.from(colgroup.children)) col.style.width = "";
+      }
+      for (const row of table.rows) {
+        const cells = Array.from(row.children).sort((left, right) => {
+          return Number(left.dataset.originalIndex || 0) - Number(right.dataset.originalIndex || 0);
+        });
+        for (const cell of cells) row.appendChild(cell);
+      }
+      const tbody = table.tBodies[0];
+      if (tbody) {
+        const rows = Array.from(tbody.rows).sort((left, right) => {
+          return Number(left.dataset.originalRow || 0) - Number(right.dataset.originalRow || 0);
+        });
+        for (const row of rows) tbody.appendChild(row);
+      }
+      for (const th of table.tHead.rows[0].cells) {
+        th.removeAttribute("aria-sort");
+        th.classList.remove("is-sorted-asc", "is-sorted-desc");
+      }
+      table.removeAttribute("data-sort-column");
+      table.removeAttribute("data-sort-direction");
+    }
+
+    function enhanceStaticTable(wrap, table) {
+      if (!wrap || !table || wrap.dataset.enhancedTable === "true") return;
+      const headerRow = table.tHead && table.tHead.rows.length ? table.tHead.rows[0] : null;
+      const tbody = table.tBodies[0];
+      if (!headerRow || !tbody || table.closest(".service-test-form")) return;
+
+      wrap.dataset.enhancedTable = "true";
+      table.classList.add("enhanced-data-table");
+      const title = wrap.dataset.tableTitle || "Table";
+      const colgroup = ensureStaticColgroup(table);
+      const headerLabels = Array.from(headerRow.cells).map((th, index) => th.textContent.trim() || `Column ${index + 1}`);
+
+      for (const row of table.rows) {
+        Array.from(row.children).forEach((cell, index) => {
+          cell.dataset.originalIndex = String(index);
+        });
+      }
+      Array.from(tbody.rows).forEach((row, rowIndex) => {
+        row.dataset.originalRow = String(rowIndex);
+        Array.from(row.cells).forEach((cell, cellIndex) => {
+          if (cell.querySelector("input, select, textarea, button, a")) return;
+          const value = cell.textContent.trim();
+          cell.textContent = "";
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "field-value-button";
+          button.textContent = value;
+          button.title = "Show field value";
+          button.addEventListener("click", () => showStaticFieldValue(headerLabels[cellIndex], value, rowIndex + 1));
+          cell.appendChild(button);
+        });
+      });
+
+      const toolbar = document.createElement("div");
+      toolbar.className = "table-toolbar";
+      const titleNode = document.createElement("span");
+      titleNode.className = "table-toolbar-title";
+      titleNode.textContent = title;
+      const actions = document.createElement("div");
+      actions.className = "table-toolbar-actions";
+      const downloadButton = createStaticTableIconButton("Download CSV", "M12 3v10m0 0 4-4m-4 4-4-4M5 17v3h14v-3");
+      downloadButton.addEventListener("click", () => downloadStaticTable(table, title));
+      const resetButton = createStaticTableIconButton("Reset table", "M4 7h6M4 7l3-3M4 7l3 3m13 7h-6m6 0l-3-3m3 3l-3 3M6 17a7 7 0 0 0 11.4 2.2M18 7A7 7 0 0 0 6.6 4.8");
+      resetButton.addEventListener("click", () => resetStaticTable(table));
+      actions.appendChild(downloadButton);
+      actions.appendChild(resetButton);
+      toolbar.appendChild(titleNode);
+      toolbar.appendChild(actions);
+      wrap.insertBefore(toolbar, table);
+
+      let dragFromIndex = null;
+      Array.from(headerRow.cells).forEach((th, index) => {
+        const originalContent = Array.from(th.childNodes);
+        const hasInteractiveHeader = Boolean(th.querySelector("input, select, textarea, button, a"));
+        th.textContent = "";
+        th.draggable = true;
+        th.dataset.originalIndex = String(index);
+        const content = document.createElement("div");
+        content.className = "table-header-content";
+        if (hasInteractiveHeader) {
+          for (const node of originalContent) content.appendChild(node);
+        } else {
+          const sortButton = document.createElement("button");
+          sortButton.type = "button";
+          sortButton.className = "table-sort-button";
+          sortButton.textContent = headerLabels[index];
+          sortButton.addEventListener("click", () => {
+            const currentIndex = Array.from(headerRow.cells).indexOf(th);
+            const nextDirection = table.dataset.sortColumn === String(currentIndex) && table.dataset.sortDirection === "asc" ? "desc" : "asc";
+            sortStaticTable(table, currentIndex, nextDirection);
+          });
+          content.appendChild(sortButton);
+        }
+        const resizeHandle = document.createElement("span");
+        resizeHandle.className = "column-resize-handle";
+        resizeHandle.setAttribute("aria-hidden", "true");
+        content.appendChild(resizeHandle);
+        th.appendChild(content);
+
+        th.addEventListener("dragstart", (event) => {
+          dragFromIndex = Array.from(headerRow.cells).indexOf(th);
+          event.dataTransfer.effectAllowed = "move";
+        });
+        th.addEventListener("dragover", (event) => {
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "move";
+        });
+        th.addEventListener("drop", (event) => {
+          event.preventDefault();
+          const toIndex = Array.from(headerRow.cells).indexOf(th);
+          if (dragFromIndex !== null) moveStaticColumn(table, dragFromIndex, toIndex);
+          dragFromIndex = null;
+        });
+        resizeHandle.addEventListener("mousedown", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          const currentIndex = Array.from(headerRow.cells).indexOf(th);
+          const col = colgroup.children[currentIndex];
+          const startX = event.clientX;
+          const startWidth = th.getBoundingClientRect().width;
+          const onMove = (moveEvent) => {
+            col.style.width = `${Math.max(96, startWidth + moveEvent.clientX - startX)}px`;
+          };
+          const onUp = () => {
+            document.removeEventListener("mousemove", onMove);
+            document.removeEventListener("mouseup", onUp);
+          };
+          document.addEventListener("mousemove", onMove);
+          document.addEventListener("mouseup", onUp);
+        });
+      });
+    }
+
+    for (const wrap of document.querySelectorAll(".table-wrap")) {
+      enhanceStaticTable(wrap, wrap.querySelector("table.data-table"));
+    }
+
+    for (const checkbox of document.querySelectorAll("[data-select-all]")) {
+      checkbox.addEventListener("change", () => {
+        const name = checkbox.dataset.selectAll;
+        const form = checkbox.closest("form") || document;
+        for (const item of form.querySelectorAll(`input[type="checkbox"][name="${CSS.escape(name)}"]`)) {
+          item.checked = checkbox.checked;
+        }
+      });
+    }
+  })();
+</script>
 {% endblock %}
