@@ -111,9 +111,8 @@ body {
 }
 
 .menu-group {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
+  position: relative;
+  display: inline-block;
   min-width: 0;
 }
 
@@ -122,27 +121,71 @@ body {
 }
 
 .menu-group-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.58);
   color: var(--accent);
   font-size: 0.78rem;
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.menu-group-label::-webkit-details-marker {
+  display: none;
+}
+
+.menu-group-label::after {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg) translateY(-2px);
+  transition: transform 120ms ease;
+}
+
+.menu-group[open] .menu-group-label,
+.menu-group.is-active .menu-group-label {
+  background: var(--surface-strong);
+  color: var(--accent-deep);
+}
+
+.menu-group[open] .menu-group-label::after {
+  transform: rotate(225deg) translate(-1px, -1px);
 }
 
 .menu-group-links {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 18;
+  min-width: 260px;
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 8px;
-  padding-right: 10px;
-  border-right: 1px solid var(--border);
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-strong);
+  box-shadow: var(--shadow);
 }
 
-.menu-group:last-child .menu-group-links {
-  border-right: none;
-  padding-right: 0;
+.menu-group:not([open]) .menu-group-links {
+  display: none;
 }
 
 .menu-link {
+  display: inline-flex;
+  align-items: center;
   color: var(--muted);
   text-decoration: none;
   padding: 10px 12px;
@@ -1323,19 +1366,18 @@ body {
   }
 
   .menu,
-  .menu-group,
   .menu-group-links {
     width: 100%;
   }
 
   .menu-group {
-    align-items: flex-start;
-    flex-direction: column;
+    width: auto;
   }
 
   .menu-group-links {
-    border-right: none;
-    padding-right: 0;
+    left: 0;
+    min-width: min(320px, calc(100vw - 56px));
+    padding: 10px;
   }
 
   .login-workspace {
