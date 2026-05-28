@@ -18,12 +18,30 @@
             <h2>{{ page.title if page is defined else "MySQL REST Console" }}</h2>
           </div>
         </div>
-        <div class="topbar-actions">
-          <div class="avatar">{{ initials }}</div>
-          <form action="{{ url_for('logout') }}" method="post">
-            <button class="ghost-button" type="submit">Logout</button>
-          </form>
-        </div>
+        <details class="account-menu">
+          <summary class="account-trigger" aria-label="Open user menu">
+            <span class="avatar">{{ initials }}</span>
+          </summary>
+          <div class="account-popover">
+            <div class="account-head">
+              <span class="avatar avatar-small">{{ initials }}</span>
+              <div>
+                <strong>{{ current_user.username }}</strong>
+                <span>{{ current_role_label }}</span>
+              </div>
+            </div>
+            <div class="account-profile">
+              <span>Connection Profile</span>
+              <strong>{{ active_connection_profile.label or 'No DB profile connected' }}</strong>
+              {% if active_connection_profile.name %}
+              <small>{{ active_connection_profile.name }}{% if active_connection_profile.db_username %} &middot; {{ active_connection_profile.db_username }}{% endif %}</small>
+              {% endif %}
+            </div>
+            <form action="{{ url_for('logout') }}" method="post">
+              <button class="ghost-button account-logout" type="submit">Logout</button>
+            </form>
+          </div>
+        </details>
       </header>
       <nav class="menu">
         {% for item in current_menu %}

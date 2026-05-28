@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from flask import Flask, request
+from flask import Flask, request, session
 
 from modules.app_config import CONFIG, active_login_profile, get_runtime_config
 from modules.profile_store import profile_names
@@ -18,9 +18,15 @@ def create_app() -> Flask:
     @app.context_processor
     def inject_template_context() -> dict[str, Any]:
         user = current_user()
+        connection_profile = dict(session.get("connection_profile", {})) if user else {}
         return {
             "config": get_runtime_config(),
             "login_profile": active_login_profile(),
+            "active_connection_profile": {
+                "name": connection_profile.get("name", ""),
+                "label": connection_profile.get("label", ""),
+                "db_username": session.get("db_username", "") if user else "",
+            },
             "login_profiles": profile_names(),
             "current_user": user,
             "current_role_label": user["role_label"] if user else "",

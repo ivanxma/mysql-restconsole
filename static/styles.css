@@ -100,24 +100,25 @@ body {
   display: flex;
   flex-direction: row;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 10px;
   margin-bottom: 20px;
-  align-items: flex-start;
-}
-
-.menu-group {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: min(100%, 240px);
+  align-items: center;
   padding: 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.42);
+  background: rgba(255, 255, 255, 0.52);
+  box-shadow: 0 14px 34px rgba(88, 40, 9, 0.08);
+}
+
+.menu-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 
 .menu-group.is-active {
-  background: rgba(255, 253, 248, 0.86);
+  color: var(--accent-deep);
 }
 
 .menu-group-label {
@@ -132,6 +133,13 @@ body {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  padding-right: 10px;
+  border-right: 1px solid var(--border);
+}
+
+.menu-group:last-child .menu-group-links {
+  border-right: none;
+  padding-right: 0;
 }
 
 .menu-link {
@@ -227,6 +235,85 @@ body {
   gap: 14px;
 }
 
+.account-menu {
+  position: relative;
+  margin-left: auto;
+}
+
+.account-menu[open] .account-trigger {
+  background: var(--surface-strong);
+}
+
+.account-trigger {
+  display: inline-grid;
+  place-items: center;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.58);
+  cursor: pointer;
+  list-style: none;
+}
+
+.account-trigger::-webkit-details-marker {
+  display: none;
+}
+
+.account-popover {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 20;
+  width: min(320px, calc(100vw - 48px));
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-strong);
+  box-shadow: var(--shadow);
+}
+
+.account-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.account-head strong,
+.account-profile strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.account-head span,
+.account-profile span,
+.account-profile small {
+  display: block;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.account-profile {
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+  border-radius: 8px;
+  background: rgba(33, 20, 13, 0.04);
+}
+
+.account-profile span {
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.account-logout {
+  width: 100%;
+}
+
 .avatar {
   width: 44px;
   height: 44px;
@@ -236,6 +323,13 @@ body {
   background: linear-gradient(135deg, var(--gold), var(--accent));
   color: white;
   font-weight: 700;
+}
+
+.avatar-small {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  font-size: 0.82rem;
 }
 
 .ghost-button,
@@ -1222,6 +1316,26 @@ body {
     flex-direction: column;
     align-items: flex-start;
     gap: 16px;
+  }
+
+  .account-menu {
+    margin-left: 0;
+  }
+
+  .menu,
+  .menu-group,
+  .menu-group-links {
+    width: 100%;
+  }
+
+  .menu-group {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .menu-group-links {
+    border-right: none;
+    padding-right: 0;
   }
 
   .login-workspace {
