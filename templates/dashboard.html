@@ -1267,14 +1267,14 @@
   </div>
 </section>
 {% endif %}
-<section class="panel">
+<section class="panel rest-service-list-panel">
   <div class="panel-head">
     <div>
       <h4>Exposed REST Services</h4>
       <p class="panel-copy">Published REST endpoints across all exposed REST schemas, including views, procedures, authentication, and enabled status.</p>
     </div>
   </div>
-  <div class="table-wrap">
+  <div class="table-wrap rest-service-table-wrap">
     <table class="data-table">
       <thead>
         <tr>
@@ -1350,8 +1350,8 @@
     </table>
   </div>
 </section>
-<dialog class="result-dialog" id="service-test-dialog">
-  <form class="dialog-form" id="service-test-form" method="dialog">
+<section class="service-test-panel" id="service-test-dialog" hidden>
+  <form class="service-test-form" id="service-test-form">
     <div class="panel-head">
       <div>
         <h4>Test REST Service</h4>
@@ -1426,31 +1426,16 @@
     </div>
     <div class="inline-message inline-message-error" id="service-test-error" hidden></div>
     <div class="result-meta" id="service-test-meta" hidden></div>
-    <section class="subsection-card" id="service-test-out-section" hidden>
-      <div class="panel-head">
-        <div>
-          <h4>OUT Parameters</h4>
-          <p class="panel-copy">Output parameters returned by the REST procedure.</p>
-        </div>
-      </div>
-      <div class="result-kv" id="service-test-out-grid"></div>
-    </section>
-    <section class="subsection-card" id="service-test-resultsets-section" hidden>
-      <div class="panel-head">
-        <div>
-          <h4>Result Sets</h4>
-          <p class="panel-copy">One or more result sets returned by the REST procedure.</p>
-        </div>
-      </div>
-      <div class="result-sets" id="service-test-resultsets"></div>
-    </section>
-    <pre class="result-output" id="service-test-output" hidden></pre>
+    <div class="result-tabview" id="service-test-tabs" hidden>
+      <div class="result-tab-list" id="service-test-tab-list" role="tablist" aria-label="Execution results"></div>
+      <div class="result-tab-panels" id="service-test-tab-panels"></div>
+    </div>
   </form>
-</dialog>
+</section>
 <script>
   (() => {
-    const dialog = document.getElementById("service-test-dialog");
-    if (!dialog) return;
+    const testPanel = document.getElementById("service-test-dialog");
+    if (!testPanel) return;
     const form = document.getElementById("service-test-form");
     const closeButton = document.getElementById("service-test-close");
     const target = document.getElementById("service-test-target");
@@ -1479,11 +1464,9 @@
     const responseSummary = document.getElementById("service-test-response");
     const errorBox = document.getElementById("service-test-error");
     const metaBox = document.getElementById("service-test-meta");
-    const outSection = document.getElementById("service-test-out-section");
-    const outGrid = document.getElementById("service-test-out-grid");
-    const resultSetsSection = document.getElementById("service-test-resultsets-section");
-    const resultSetsBox = document.getElementById("service-test-resultsets");
-    const outputBox = document.getElementById("service-test-output");
+    const tabsBox = document.getElementById("service-test-tabs");
+    const tabList = document.getElementById("service-test-tab-list");
+    const tabPanels = document.getElementById("service-test-tab-panels");
 
     function resetResult() {
       statusBox.className = "result-status result-status-idle";
@@ -1494,21 +1477,7 @@
       errorBox.textContent = "";
       metaBox.hidden = true;
       metaBox.textContent = "";
-      outSection.hidden = true;
-      outGrid.innerHTML = "";
-      resultSetsSection.hidden = true;
-      resultSetsBox.innerHTML = "";
-      outputBox.hidden = true;
-      outputBox.textContent = "";
-    }
-
-    function escapeHtml(value) {
-      return String(value)
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;")
-        .replaceAll("'", "&#39;");
+      clearResultTabs();
     }
 
     function buildParamInputs(paramNames) {
@@ -1579,8 +1548,9 @@
       }
     }
 
-    function renderKeyValueGrid(container, entries) {
-      container.innerHTML = "";
+    function renderKeyValueGrid(entries) {
+      const container = document.createElement("div");
+      container.className = "result-kv";
       for (const [key, value] of Object.entries(entries)) {
         const card = document.createElement("article");
         card.className = "summary-card";
@@ -1592,6 +1562,7 @@
         card.appendChild(strong);
         container.appendChild(card);
       }
+      return container;
     }
 
     function renderRowsTable(rows) {
@@ -1645,52 +1616,112 @@
       return wrap;
     }
 
+    function clearResultTabs() {
+      tabsBox.hidden = true;
+      tabList.innerHTML = "";
+      tabPanels.innerHTML = "";
+    }
+
+    function slugifyTabId(label, index) {
+      return `service-test-tab-${index}-${String(label).toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+    }
+
+    function selectResultTab(tabId) {
+      for (const button of tabList.querySelectorAll(".result-tab-button")) {
+        const isActive = button.dataset.panelId === tabId;
+        button.classList.toggle("is-active", isActive);
+        button.setAttribute("aria-selected", isActive ? "true" : "false");
+      }
+      for (const panel of tabPanels.querySelectorAll(".result-tab-panel")) {
+        panel.hidden = panel.id !== tabId;
+      }
+    }
+
+    function addResultTab(label, contentNode) {
+      const index = tabList.children.length + 1;
+      const tabId = slugifyTabId(label, index);
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "result-tab-button";
+      button.setAttribute("role", "tab");
+      button.dataset.panelId = tabId;
+      button.setAttribute("aria-controls", tabId);
+      button.setAttribute("aria-selected", "false");
+      button.textContent = label;
+
+      const panel = document.createElement("section");
+      panel.className = "result-tab-panel";
+      panel.id = tabId;
+      panel.setAttribute("role", "tabpanel");
+      panel.hidden = true;
+      panel.appendChild(contentNode);
+
+      button.addEventListener("click", () => selectResultTab(tabId));
+      tabList.appendChild(button);
+      tabPanels.appendChild(panel);
+      tabsBox.hidden = false;
+      if (index === 1) {
+        selectResultTab(tabId);
+      }
+    }
+
+    function renderSummaryTab(result) {
+      const summary = document.createElement("div");
+      summary.className = "result-kv";
+      const entries = {
+        Method: result.request_method || "GET",
+        Status: result.status_code || "",
+        "Content Type": result.content_type || "",
+        Query: result.query_string ? `?${result.query_string}` : "",
+      };
+      for (const [key, value] of Object.entries(entries)) {
+        if (value !== "") {
+          const card = document.createElement("article");
+          card.className = "summary-card";
+          const label = document.createElement("span");
+          label.textContent = key;
+          const strong = document.createElement("strong");
+          strong.textContent = String(value);
+          card.appendChild(label);
+          card.appendChild(strong);
+          summary.appendChild(card);
+        }
+      }
+      return summary;
+    }
+
+    function renderRawOutput(value) {
+      const pre = document.createElement("pre");
+      pre.className = "result-output";
+      pre.hidden = false;
+      pre.textContent = value || "";
+      return pre;
+    }
+
     function renderResultSets(resultSets) {
-      resultSetsBox.innerHTML = "";
-      resultSetsSection.hidden = !Array.isArray(resultSets) || resultSets.length === 0;
       for (const [index, resultSet] of resultSets.entries()) {
-        const card = document.createElement("section");
-        card.className = "subsection-card";
-        const head = document.createElement("div");
-        head.className = "panel-head";
-        const copy = document.createElement("div");
-        const title = document.createElement("h4");
-        title.textContent = resultSet.name || `Result Set ${index + 1}`;
+        const content = document.createElement("div");
         const blurb = document.createElement("p");
         blurb.className = "panel-copy";
         blurb.textContent = `${Array.isArray(resultSet.rows) ? resultSet.rows.length : 0} row(s) returned.`;
-        copy.appendChild(title);
-        copy.appendChild(blurb);
-        head.appendChild(copy);
-        card.appendChild(head);
-        card.appendChild(renderRowsTable(resultSet.rows || []));
-        resultSetsBox.appendChild(card);
+        content.appendChild(blurb);
+        content.appendChild(renderRowsTable(resultSet.rows || []));
+        addResultTab(resultSet.name || `Result Set ${index + 1}`, content);
       }
     }
 
     function renderResultSetTables(resultSetTables) {
-      resultSetsBox.innerHTML = "";
-      resultSetsSection.hidden = !Array.isArray(resultSetTables) || resultSetTables.length === 0;
       for (const [index, resultSet] of resultSetTables.entries()) {
-        const card = document.createElement("section");
-        card.className = "subsection-card";
-        const head = document.createElement("div");
-        head.className = "panel-head";
-        const copy = document.createElement("div");
-        const title = document.createElement("h4");
-        title.textContent = resultSet.name || `Result Set ${index + 1}`;
+        const content = document.createElement("div");
         const blurb = document.createElement("p");
         blurb.className = "panel-copy";
         blurb.textContent = `${resultSet.row_count || 0} row(s) returned.`;
-        copy.appendChild(title);
-        copy.appendChild(blurb);
-        head.appendChild(copy);
-        card.appendChild(head);
+        content.appendChild(blurb);
         const wrap = document.createElement("div");
         wrap.className = "table-wrap";
         wrap.innerHTML = resultSet.html || "";
-        card.appendChild(wrap);
-        resultSetsBox.appendChild(card);
+        content.appendChild(wrap);
+        addResultTab(resultSet.name || `Result Set ${index + 1}`, content);
       }
     }
 
@@ -1737,7 +1768,9 @@
         statusBox.textContent = "Failed";
         errorBox.hidden = false;
         errorBox.textContent = error.message;
-        dialog.showModal();
+        testPanel.hidden = false;
+        testPanel.classList.add("is-open");
+        testPanel.scrollIntoView({ behavior: "smooth", block: "end" });
         return;
       }
       endpointTemplate.value = button.dataset.endpointTemplate || "";
@@ -1752,7 +1785,9 @@
       authFields.hidden = (button.dataset.authRequired || "") !== "Required";
       authUsername.required = !authFields.hidden;
       authPassword.required = !authFields.hidden;
-      dialog.showModal();
+      testPanel.hidden = false;
+      testPanel.classList.add("is-open");
+      testPanel.scrollIntoView({ behavior: "smooth", block: "end" });
       requestSummary.textContent = button.dataset.endpointTemplate || "REST endpoint";
       responseSummary.textContent = (button.dataset.authRequired || "Not Required") === "Required"
         ? "Authentication required"
@@ -1778,7 +1813,10 @@
     }
     bindButtons();
 
-    closeButton.addEventListener("click", () => dialog.close());
+    closeButton.addEventListener("click", () => {
+      testPanel.classList.remove("is-open");
+      testPanel.hidden = true;
+    });
 
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -1840,25 +1878,27 @@
         if (result.request_method === "POST" && result.request_payload && Object.keys(result.request_payload).length > 0) {
           requestSummary.textContent = `${result.request_method} ${endpointTemplate.value} ${JSON.stringify(result.request_payload)}`;
         }
+        clearResultTabs();
+        addResultTab("Summary", renderSummaryTab(result));
         if (result.out_parameters && Object.keys(result.out_parameters).length > 0) {
-          outSection.hidden = false;
-          renderKeyValueGrid(outGrid, result.out_parameters);
+          addResultTab("OUT Parameters", renderKeyValueGrid(result.out_parameters));
         }
         if (Array.isArray(result.result_set_tables) && result.result_set_tables.length > 0) {
           renderResultSetTables(result.result_set_tables);
         } else if (Array.isArray(result.result_sets) && result.result_sets.length > 0) {
           renderResultSets(result.result_sets);
         }
-        const shouldShowRawBody = !(Array.isArray(result.result_sets) && result.result_sets.length > 0)
-          && !(result.out_parameters && Object.keys(result.out_parameters).length > 0);
-        outputBox.hidden = !shouldShowRawBody;
-        outputBox.textContent = result.body || "";
+        if (result.body) {
+          addResultTab("Raw Output", renderRawOutput(result.body));
+        }
       } catch (error) {
         statusBox.className = "result-status result-status-error";
         statusBox.textContent = "Failed";
         responseSummary.textContent = "Execution error";
         errorBox.hidden = false;
         errorBox.textContent = error.message;
+        clearResultTabs();
+        addResultTab("Error", renderRawOutput(error.message));
       } finally {
         submitButton.disabled = false;
       }

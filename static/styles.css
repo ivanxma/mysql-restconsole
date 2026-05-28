@@ -1349,24 +1349,38 @@ body {
   overflow-wrap: anywhere;
 }
 
-.result-dialog {
-  width: min(900px, calc(100vw - 32px));
-  border: none;
-  padding: 0;
-  background: transparent;
-}
-
-.result-dialog::backdrop {
-  background: rgba(34, 17, 17, 0.38);
-}
-
-.dialog-form {
+.rest-service-list-panel {
   display: flex;
   flex-direction: column;
-  gap: 18px;
-  padding: 24px;
+  max-height: 50vh;
+}
+
+.rest-service-table-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.service-test-panel {
+  position: sticky;
+  bottom: 16px;
+  z-index: 20;
+  margin-top: 18px;
+}
+
+.service-test-panel[hidden] {
+  display: none;
+}
+
+.service-test-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-height: 48vh;
+  overflow: auto;
+  padding: 20px;
   border: 1px solid var(--border);
-  border-radius: 30px;
+  border-radius: 8px;
   background: var(--surface-strong);
   box-shadow: var(--shadow);
 }
@@ -1447,6 +1461,56 @@ body {
 .result-sets {
   display: grid;
   gap: 14px;
+}
+
+.result-tabview {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.result-tabview[hidden] {
+  display: none;
+}
+
+.result-tab-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px;
+  border-radius: 8px;
+  background: rgba(34, 17, 17, 0.06);
+}
+
+.result-tab-button {
+  appearance: none;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  padding: 10px 12px;
+  transition: background 140ms ease, color 140ms ease, transform 140ms ease;
+}
+
+.result-tab-button.is-active {
+  background: linear-gradient(135deg, var(--accent), var(--accent-deep));
+  color: white;
+  transform: translateY(-1px);
+}
+
+.result-tab-panels {
+  min-height: 160px;
+}
+
+.result-tab-panel {
+  display: block;
+}
+
+.result-tab-panel[hidden] {
+  display: none;
 }
 
 .pandas-table {
