@@ -865,16 +865,25 @@ def create_rest_service_definition(
 
 
 def list_rest_service_paths() -> list[str]:
-    rows = run_admin_sql("SHOW REST SERVICES")
-    service_paths: list[str] = []
-    for row in rows:
-        values = list(row.values())
-        if not values:
-            continue
-        service_path = str(values[0]).strip()
-        if service_path.startswith("/"):
-            service_paths.append(service_path)
-    return service_paths
+    cache_key = "rest-services:paths"
+    cached = get_cached_value(cache_key)
+    if cached is not None:
+        return cached
+
+    rows = run_admin_sql(
+        """
+        SELECT url_context_root AS service_path
+        FROM mysql_rest_service_metadata.service
+        WHERE published = 1
+        ORDER BY url_context_root
+        """
+    )
+    service_paths = [
+        str(row.get("service_path", "")).strip()
+        for row in rows
+        if str(row.get("service_path", "")).strip().startswith("/")
+    ]
+    return set_cached_value(cache_key, service_paths)
 
 
 def create_rest_procedure_definition(

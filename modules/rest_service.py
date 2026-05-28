@@ -310,16 +310,52 @@ def get_rest_procedure_details(
     if cached is not None:
         return cached
 
-    create_output = str(
-        run_admin_sql(
-            f"SHOW CREATE REST PROCEDURE {object_path} FROM SERVICE {service_path} SCHEMA {schema_path};",
-            raw_output=True,
-        )
+    rows = run_admin_sql(
+        f"""
+        SELECT
+            ds.name AS routine_schema,
+            dbo.name AS routine_name
+        FROM mysql_rest_service_metadata.service s
+        JOIN mysql_rest_service_metadata.db_schema ds ON ds.service_id = s.id
+        JOIN mysql_rest_service_metadata.db_object dbo ON dbo.db_schema_id = ds.id
+        WHERE s.url_context_root = {_quote_sql_string(service_path)}
+          AND ds.request_path = {_quote_sql_string(schema_path)}
+          AND dbo.request_path = {_quote_sql_string(object_path)}
+          AND dbo.object_type IN ('PROCEDURE', 'FUNCTION')
+        LIMIT 1
+        """
     )
+    procedure_params: list[dict[str, str]] = []
+    if rows:
+        routine_schema = str(rows[0].get("routine_schema", "")).strip()
+        routine_name = str(rows[0].get("routine_name", "")).strip()
+        if routine_schema and routine_name:
+            parameter_rows = run_admin_sql(
+                f"""
+                SELECT
+                    COALESCE(PARAMETER_MODE, 'IN') AS parameter_mode,
+                    PARAMETER_NAME AS parameter_name
+                FROM information_schema.parameters
+                WHERE specific_schema = {_quote_sql_string(routine_schema)}
+                  AND specific_name = {_quote_sql_string(routine_name)}
+                  AND PARAMETER_NAME IS NOT NULL
+                ORDER BY ORDINAL_POSITION
+                """
+            )
+            procedure_params = [
+                {
+                    "name": str(row.get("parameter_name", "")),
+                    "source_name": str(row.get("parameter_name", "")),
+                    "mode": str(row.get("parameter_mode", "IN")).upper(),
+                }
+                for row in parameter_rows
+                if str(row.get("parameter_name", "")).strip()
+            ]
+
     return set_cached_value(
         cache_key,
         {
-            "procedure_params": parse_rest_procedure_parameters(create_output),
+            "procedure_params": procedure_params,
         },
     )
 
@@ -496,14 +532,24 @@ def get_rest_service_auth_details(
 
     auth_required = infer_auth_required(auth_apps)
     auth_path = "/authentication"
-
-    if auth_required == "Required":
-        schema_create_output = str(
-            run_admin_sql(f"SHOW CREATE REST SCHEMA {schema_path} FROM {service_path};", raw_output=True)
-        )
-        auth_required = extract_rest_auth_mode(schema_create_output)
-        service_create_output = str(run_admin_sql(f"SHOW CREATE REST SERVICE {service_path};", raw_output=True))
-        auth_path = extract_rest_auth_path(service_create_output)
+    rows = run_admin_sql(
+        f"""
+        SELECT
+            s.auth_path AS auth_path,
+            CASE
+                WHEN COALESCE(ds.requires_auth, 0) = 1 THEN 'Required'
+                ELSE 'Not Required'
+            END AS auth_required
+        FROM mysql_rest_service_metadata.service s
+        LEFT JOIN mysql_rest_service_metadata.db_schema ds ON ds.service_id = s.id
+            AND ds.request_path = {_quote_sql_string(schema_path)}
+        WHERE s.url_context_root = {_quote_sql_string(service_path)}
+        LIMIT 1
+        """
+    )
+    if rows:
+        auth_required = str(rows[0].get("auth_required", auth_required)) or auth_required
+        auth_path = str(rows[0].get("auth_path", auth_path)) or auth_path
 
     return set_cached_value(
         cache_key,
