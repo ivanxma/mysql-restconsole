@@ -2030,16 +2030,22 @@
         const loginPath = `${requestContext.servicePath}${normalizedAuthPath}/login`.replaceAll("//", "/");
         serviceBase.pathname = loginPath;
         serviceBase.search = "";
-        const authPayload = {
-          username: requestContext.authUsername,
-          password: requestContext.authPassword,
-          authApp: requestContext.authApp || "MySQL",
-          sessionType: "bearer",
-        };
         lines.push(
           `TOKEN_FILE=${shellQuote(tokenFile)}`,
           `LOGIN_URL=${shellQuote(serviceBase.toString())}`,
-          `AUTH_PAYLOAD=${shellQuote(JSON.stringify(authPayload))}`,
+          `AUTH_APP=${shellQuote(requestContext.authApp || "MySQL")}`,
+          "# Credentials are intentionally not embedded in this generated script.",
+          'REST_USERNAME="${REST_USERNAME:-}"',
+          'REST_PASSWORD="${REST_PASSWORD:-}"',
+          'if [ -z "$REST_USERNAME" ]; then',
+          '  read -r -p "REST username: " REST_USERNAME',
+          "fi",
+          'if [ -z "$REST_PASSWORD" ]; then',
+          '  read -r -s -p "REST password: " REST_PASSWORD',
+          "  echo",
+          "fi",
+          "export REST_USERNAME REST_PASSWORD AUTH_APP",
+          'AUTH_PAYLOAD=$(python3 -c \'import json,os; print(json.dumps({"username": os.environ["REST_USERNAME"], "password": os.environ["REST_PASSWORD"], "authApp": os.environ.get("AUTH_APP", "MySQL"), "sessionType": "bearer"}))\')',
           "",
           'curl -skS -X POST "$LOGIN_URL" \\',
           '  -H "Content-Type: application/json" \\',
@@ -2226,8 +2232,6 @@
         authRequired: (authRequired.value || "") === "Required",
         authPath: authPath.value || "/authentication",
         authApp: authApp.value || "MySQL",
-        authUsername: formData.get("auth_username") || "",
-        authPassword: formData.get("auth_password") || "",
       };
       const requestPath = `${endpointTemplate.value}${queryString ? `?${queryString}` : ""}`;
       requestSummary.textContent = objectKind.value === "PROCEDURE"
