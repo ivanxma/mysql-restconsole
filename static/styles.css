@@ -103,12 +103,14 @@ body {
   gap: 10px;
   margin-bottom: 20px;
   align-items: center;
-  overflow-x: auto;
+  overflow: visible;
   padding: 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.52);
   box-shadow: 0 14px 34px rgba(127, 29, 29, 0.08);
+  position: relative;
+  z-index: 15;
 }
 
 .menu-group {
@@ -169,7 +171,7 @@ body {
   position: absolute;
   top: calc(100% + 8px);
   left: 0;
-  z-index: 18;
+  z-index: 30;
   min-width: 260px;
   display: flex;
   flex-direction: column;
