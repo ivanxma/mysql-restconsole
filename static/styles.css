@@ -952,6 +952,24 @@ body {
   display: flex;
   flex-direction: column;
   gap: 18px;
+  align-items: stretch;
+}
+
+.form-actions,
+.sql-execute-form {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.form-actions > .primary-button,
+.form-actions > .ghost-button,
+.sql-execute-form > .primary-button,
+.sql-execute-form > .ghost-button,
+.stack-form > .primary-button,
+.stack-form > .ghost-button {
+  width: auto;
+  align-self: flex-start;
 }
 
 .form-grid {
@@ -985,6 +1003,42 @@ body {
   font-size: 0.78rem;
   letter-spacing: 0.1em;
   text-transform: uppercase;
+}
+
+.sql-output-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.sql-output,
+.sql-result {
+  margin: 0;
+  padding: 14px;
+  max-height: 360px;
+  overflow: auto;
+  border: 1px solid rgba(127, 29, 29, 0.14);
+  border-radius: 8px;
+  background: #fffafa;
+  color: var(--ink);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.sql-result {
+  background: rgba(240, 253, 244, 0.82);
+}
+
+.sql-result-error {
+  background: rgba(254, 242, 242, 0.9);
+  color: var(--accent-deep);
 }
 
 .preview-card strong {

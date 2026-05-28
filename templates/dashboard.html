@@ -711,8 +711,23 @@
     <div class="inline-message inline-message-warn">
       This step only creates the REST service path. Use <code>Expose DB as Service</code> to bind a database or schema to it.
     </div>
-    <button class="primary-button" type="submit">Create RESTful Service</button>
+    <div class="form-actions">
+      <button class="primary-button" type="submit" name="action" value="generate">Generate SQL</button>
+    </div>
   </form>
+  {% if rest_sql_workbench.sql or rest_sql_workbench.result or rest_sql_workbench.error %}
+  <section class="sql-output-panel">
+    <div class="panel-head"><div><h4>Generated SQL</h4></div></div>
+    {% if rest_sql_workbench.sql %}<pre class="sql-output">{{ rest_sql_workbench.sql }}</pre>{% endif %}
+    <form class="sql-execute-form" action="{{ url_for('rest_admin_create_restful_service') }}" method="post">
+      <input type="hidden" name="service_name" value="{{ rest_service_form.service_name }}">
+      <input type="hidden" name="sql" value="{{ rest_sql_workbench.sql }}">
+      <button class="primary-button" type="submit" name="action" value="execute">Execute</button>
+    </form>
+    {% if rest_sql_workbench.result %}<pre class="sql-result">{{ rest_sql_workbench.result }}</pre>{% endif %}
+    {% if rest_sql_workbench.error %}<pre class="sql-result sql-result-error">{{ rest_sql_workbench.error }}</pre>{% endif %}
+  </section>
+  {% endif %}
 </section>
 {% elif active_slug == "expose-db-as-service" %}
 <section class="panel form-panel">
@@ -775,8 +790,25 @@
         <strong>{{ rest_db_preview.endpoint or 'Select a REST service and database' }}</strong>
       </article>
     </div>
-    <button class="primary-button" type="submit">Expose Database</button>
+    <div class="form-actions">
+      <button class="primary-button" type="submit" name="action" value="generate">Generate SQL</button>
+    </div>
   </form>
+  {% if rest_sql_workbench.sql or rest_sql_workbench.result or rest_sql_workbench.error %}
+  <section class="sql-output-panel">
+    <div class="panel-head"><div><h4>Generated SQL</h4></div></div>
+    {% if rest_sql_workbench.sql %}<pre class="sql-output">{{ rest_sql_workbench.sql }}</pre>{% endif %}
+    <form class="sql-execute-form" action="{{ url_for('rest_admin_expose_database_service') }}" method="post">
+      <input type="hidden" name="service_path" value="{{ rest_db_form.service_path }}">
+      <input type="hidden" name="source_schema" value="{{ selected_db }}">
+      <input type="hidden" name="auth_required" value="{{ rest_db_form.auth_required }}">
+      <input type="hidden" name="sql" value="{{ rest_sql_workbench.sql }}">
+      <button class="primary-button" type="submit" name="action" value="execute">Execute</button>
+    </form>
+    {% if rest_sql_workbench.result %}<pre class="sql-result">{{ rest_sql_workbench.result }}</pre>{% endif %}
+    {% if rest_sql_workbench.error %}<pre class="sql-result sql-result-error">{{ rest_sql_workbench.error }}</pre>{% endif %}
+  </section>
+  {% endif %}
   {% endif %}
 </section>
 {% elif active_slug == "expose-table-as-service" %}
@@ -855,8 +887,26 @@
     <div class="inline-message inline-message-warn">
       This action creates a SQL view inside <code>restapidb</code> based on the selected source table and exposes that view as the RESTful endpoint.
     </div>
-    <button class="primary-button" type="submit">Expose Table</button>
+    <div class="form-actions">
+      <button class="primary-button" type="submit" name="action" value="generate">Generate SQL</button>
+    </div>
   </form>
+  {% if rest_sql_workbench.sql or rest_sql_workbench.result or rest_sql_workbench.error %}
+  <section class="sql-output-panel">
+    <div class="panel-head"><div><h4>Generated SQL</h4></div></div>
+    {% if rest_sql_workbench.sql %}<pre class="sql-output">{{ rest_sql_workbench.sql }}</pre>{% endif %}
+    <form class="sql-execute-form" action="{{ url_for('rest_admin_expose_table_service') }}" method="post">
+      <input type="hidden" name="service_path" value="{{ rest_table_form.service_path }}">
+      <input type="hidden" name="source_schema" value="{{ selected_db }}">
+      <input type="hidden" name="source_table" value="{{ selected_table }}">
+      <input type="hidden" name="auth_required" value="{{ rest_table_form.auth_required }}">
+      <input type="hidden" name="sql" value="{{ rest_sql_workbench.sql }}">
+      <button class="primary-button" type="submit" name="action" value="execute">Execute</button>
+    </form>
+    {% if rest_sql_workbench.result %}<pre class="sql-result">{{ rest_sql_workbench.result }}</pre>{% endif %}
+    {% if rest_sql_workbench.error %}<pre class="sql-result sql-result-error">{{ rest_sql_workbench.error }}</pre>{% endif %}
+  </section>
+  {% endif %}
   {% endif %}
 </section>
 {% elif active_slug == "expose-sp-as-service" %}
@@ -953,8 +1003,26 @@
       </article>
     </div>
 
-    <button class="primary-button" type="submit">Create Procedure and Expose Service</button>
+    <div class="form-actions">
+      <button class="primary-button" type="submit" name="action" value="generate">Generate SQL</button>
+    </div>
   </form>
+  {% if rest_sql_workbench.sql or rest_sql_workbench.result or rest_sql_workbench.error %}
+  <section class="sql-output-panel">
+    <div class="panel-head"><div><h4>Generated SQL</h4></div></div>
+    {% if rest_sql_workbench.sql %}<pre class="sql-output">{{ rest_sql_workbench.sql }}</pre>{% endif %}
+    <form class="sql-execute-form" action="{{ url_for('rest_admin_create_rest_procedure') }}" method="post">
+      <input type="hidden" name="procedure_name" value="{{ rest_procedure_form.procedure_name }}">
+      <input type="hidden" name="service_path" value="{{ rest_procedure_form.service_path }}">
+      <input type="hidden" name="auth_required" value="{{ rest_procedure_form.auth_required }}">
+      <input type="hidden" name="body_sql" value="{{ rest_procedure_form.body }}">
+      <input type="hidden" name="sql" value="{{ rest_sql_workbench.sql }}">
+      <button class="primary-button" type="submit" name="action" value="execute">Execute</button>
+    </form>
+    {% if rest_sql_workbench.result %}<pre class="sql-result">{{ rest_sql_workbench.result }}</pre>{% endif %}
+    {% if rest_sql_workbench.error %}<pre class="sql-result sql-result-error">{{ rest_sql_workbench.error }}</pre>{% endif %}
+  </section>
+  {% endif %}
   <script>
     (() => {
       const body = document.getElementById("procedure-param-body");
@@ -1052,7 +1120,7 @@
                 <input type="hidden" name="service_path" value="{{ selected_service_path }}">
                 <input type="hidden" name="procedure_name" value="{{ procedure_name }}">
                 <input type="hidden" name="auth_required" value="{{ rest_procedure_form.auth_required }}">
-                <button class="ghost-button" type="submit">Expose</button>
+                <button class="ghost-button" type="submit" name="action" value="generate">Generate SQL</button>
               </form>
               {% else %}
               <span class="table-badge table-badge-muted">Select service</span>
@@ -1068,6 +1136,21 @@
       </table>
     </div>
   </section>
+  {% if rest_sql_workbench.sql or rest_sql_workbench.result or rest_sql_workbench.error %}
+  <section class="sql-output-panel">
+    <div class="panel-head"><div><h4>Generated SQL</h4></div></div>
+    {% if rest_sql_workbench.sql %}<pre class="sql-output">{{ rest_sql_workbench.sql }}</pre>{% endif %}
+    <form class="sql-execute-form" action="{{ url_for('rest_admin_expose_sys_procedure') }}" method="post">
+      <input type="hidden" name="service_path" value="{{ selected_service_path }}">
+      <input type="hidden" name="procedure_name" value="">
+      <input type="hidden" name="auth_required" value="{{ rest_procedure_form.auth_required }}">
+      <input type="hidden" name="sql" value="{{ rest_sql_workbench.sql }}">
+      <button class="primary-button" type="submit" name="action" value="execute">Execute</button>
+    </form>
+    {% if rest_sql_workbench.result %}<pre class="sql-result">{{ rest_sql_workbench.result }}</pre>{% endif %}
+    {% if rest_sql_workbench.error %}<pre class="sql-result sql-result-error">{{ rest_sql_workbench.error }}</pre>{% endif %}
+  </section>
+  {% endif %}
   {% endif %}
 </section>
 {% elif (active_slug == "restapidb" and active_tab == "list") or active_slug == "list-restful-services" %}

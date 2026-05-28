@@ -32,17 +32,17 @@ from modules.profile_store import (
 from modules.profile_session_store import clear_profile_password, store_profile_password
 from modules.update_service import poll_token_matches, read_update_status, start_update_job
 from modules.services import (
+    build_expose_database_to_service_definition,
+    build_expose_existing_schema_procedure,
+    build_rest_procedure_definition,
+    build_rest_service_definition,
+    build_rest_service_path_definition,
     classify_role,
     create_user_account,
-    create_rest_procedure_definition,
-    create_rest_service_path_definition,
-    create_rest_service_definition,
     default_special_priv_category,
     delete_selected_users,
     ensure_login_tunnels,
     execute_rest_endpoint,
-    expose_database_to_service_definition,
-    expose_existing_schema_procedure,
     fallback_user_role,
     fetch_grants,
     find_restapidb_service,
@@ -61,6 +61,7 @@ from modules.services import (
     list_tables,
     list_users_with_roles,
     non_system_users,
+    run_admin_connector_sql,
     special_privilege_categories,
     start_shared_tunnels,
     stop_all_shared_tunnels,
@@ -87,6 +88,59 @@ REST_API_PAGE_SLUGS = {
     "expose-table-as-service",
     "expose-sp-as-service",
 }
+
+
+REST_SQL_STATE_KEY = "rest_sql_workbench"
+
+
+def _rest_sql_state(slug: str) -> dict[str, str]:
+    state = session.get(REST_SQL_STATE_KEY, {})
+    if not isinstance(state, dict):
+        return {}
+    item = state.get(slug, {})
+    return item if isinstance(item, dict) else {}
+
+
+def _store_rest_sql_state(slug: str, *, sql: str = "", result: str = "", error: str = "") -> None:
+    state = session.get(REST_SQL_STATE_KEY, {})
+    if not isinstance(state, dict):
+        state = {}
+    state[slug] = {
+        "sql": sql,
+        "result": result,
+        "error": error,
+    }
+    session[REST_SQL_STATE_KEY] = state
+
+
+def _execute_generated_rest_sql(*, slug: str, sql: str, redirect_args: dict[str, str]):
+    try:
+        output = run_admin_connector_sql(sql, raw_output=True)
+        result = str(output).strip() or "SQL executed successfully."
+        _store_rest_sql_state(slug, sql=sql, result=result)
+        flash("SQL executed with the active profile session.", "info")
+    except Exception as exc:
+        _store_rest_sql_state(slug, sql=sql, error=str(exc))
+        flash(f"SQL execution failed: {exc}", "error")
+    return redirect(url_for("dashboard", slug=slug, **redirect_args))
+
+
+def _procedure_parameters_from_form() -> list[dict[str, str]]:
+    param_names = request.form.getlist("param_name")
+    param_types = request.form.getlist("param_type")
+    param_modes = request.form.getlist("param_mode")
+    parameters: list[dict[str, str]] = []
+    for name, param_type, mode in zip(param_names, param_types, param_modes):
+        if not name.strip() and not param_type.strip():
+            continue
+        parameters.append(
+            {
+                "name": name.strip(),
+                "type": param_type.strip(),
+                "mode": mode.strip().upper(),
+            }
+        )
+    return parameters
 
 
 def _parse_int_field(raw_value: str, *, label: str) -> int:
@@ -454,6 +508,7 @@ def _dashboard_context_for_rest_admin(slug: str) -> dict[str, Any]:
             "schema_path": "/restapidb",
             "endpoint": f"{selected_service}/restapidb/{selected_table.lower()}" if selected_service and selected_table else "",
         },
+        "rest_sql_workbench": _rest_sql_state(slug),
     }
 
 
@@ -797,6 +852,7 @@ def register_routes(app: Flask) -> None:
             return redirect(url_for("login"))
 
         service_name = request.form.get("service_name", "").strip()
+        action = request.form.get("action", "generate")
 
         if not service_name:
             flash("Enter the REST service path name.", "error")
@@ -809,15 +865,17 @@ def register_routes(app: Flask) -> None:
             )
 
         try:
-            result = create_rest_service_path_definition(
-                service_name=service_name,
-            )
-            flash(
-                f"Created REST service path {result['service_path']}.",
-                "info",
-            )
+            result = build_rest_service_path_definition(service_name=service_name)
+            if action == "execute":
+                return _execute_generated_rest_sql(
+                    slug="create-restful-service",
+                    sql=request.form.get("sql", result["sql"]),
+                    redirect_args={"service_name": service_name},
+                )
+            _store_rest_sql_state("create-restful-service", sql=result["sql"])
+            flash("Generated REST service SQL.", "info")
         except Exception as exc:
-            flash(f"REST service creation failed: {exc}", "error")
+            flash(f"REST service SQL generation failed: {exc}", "error")
             return redirect(
                 url_for(
                     "dashboard",
@@ -826,7 +884,7 @@ def register_routes(app: Flask) -> None:
                 )
             )
 
-        return redirect(url_for("dashboard", slug="list-restful-services"))
+        return redirect(url_for("dashboard", slug="create-restful-service", service_name=service_name))
 
     @app.post("/rest-admin/schemas/create")
     def rest_admin_expose_database_service():
@@ -837,6 +895,7 @@ def register_routes(app: Flask) -> None:
         service_path = request.form.get("service_path", "").strip()
         source_schema = request.form.get("source_schema", "").strip()
         auth_required = request.form.get("auth_required", "Not Required") == "Required"
+        action = request.form.get("action", "generate")
 
         if not service_path or not source_schema:
             flash("Choose a REST service and database to expose.", "error")
@@ -851,17 +910,26 @@ def register_routes(app: Flask) -> None:
             )
 
         try:
-            result = expose_database_to_service_definition(
+            result = build_expose_database_to_service_definition(
                 service_path=service_path,
                 source_schema=source_schema,
                 auth_required=auth_required,
             )
-            flash(
-                f"Exposed database {result['source_schema']} on {result['service_path']} as {result['schema_path']} ({result['auth_required']}).",
-                "info",
-            )
+            redirect_args = {
+                "service_path": service_path,
+                "db": source_schema,
+                "auth_required": "Required" if auth_required else "Not Required",
+            }
+            if action == "execute":
+                return _execute_generated_rest_sql(
+                    slug="expose-db-as-service",
+                    sql=request.form.get("sql", result["sql"]),
+                    redirect_args=redirect_args,
+                )
+            _store_rest_sql_state("expose-db-as-service", sql=result["sql"])
+            flash("Generated database exposure SQL.", "info")
         except Exception as exc:
-            flash(f"Database exposure failed: {exc}", "error")
+            flash(f"Database exposure SQL generation failed: {exc}", "error")
             return redirect(
                 url_for(
                     "dashboard",
@@ -872,7 +940,7 @@ def register_routes(app: Flask) -> None:
                 )
             )
 
-        return redirect(url_for("dashboard", slug="list-restful-services"))
+        return redirect(url_for("dashboard", slug="expose-db-as-service", **redirect_args))
 
     @app.post("/rest-admin/tables/create")
     def rest_admin_expose_table_service():
@@ -884,6 +952,7 @@ def register_routes(app: Flask) -> None:
         source_schema = request.form.get("source_schema", "").strip()
         source_table = request.form.get("source_table", "").strip()
         auth_required = request.form.get("auth_required", "Not Required") == "Required"
+        action = request.form.get("action", "generate")
 
         if not service_path or not source_schema or not source_table:
             flash("Choose a REST service, database, and table to expose.", "error")
@@ -899,18 +968,28 @@ def register_routes(app: Flask) -> None:
             )
 
         try:
-            result = create_rest_service_definition(
+            result = build_rest_service_definition(
                 service_path=service_path,
                 source_schema=source_schema,
                 source_table=source_table,
                 auth_required=auth_required,
             )
-            flash(
-                f"Exposed {result['source_table']} through {result['endpoint']} ({result['auth_required']}).",
-                "info",
-            )
+            redirect_args = {
+                "service_path": service_path,
+                "db": source_schema,
+                "table": source_table,
+                "auth_required": "Required" if auth_required else "Not Required",
+            }
+            if action == "execute":
+                return _execute_generated_rest_sql(
+                    slug="expose-table-as-service",
+                    sql=request.form.get("sql", result["sql"]),
+                    redirect_args=redirect_args,
+                )
+            _store_rest_sql_state("expose-table-as-service", sql=result["sql"])
+            flash("Generated table exposure SQL.", "info")
         except Exception as exc:
-            flash(f"Table exposure failed: {exc}", "error")
+            flash(f"Table exposure SQL generation failed: {exc}", "error")
             return redirect(
                 url_for(
                     "dashboard",
@@ -922,7 +1001,7 @@ def register_routes(app: Flask) -> None:
                 )
             )
 
-        return redirect(url_for("dashboard", slug="list-restful-services"))
+        return redirect(url_for("dashboard", slug="expose-table-as-service", **redirect_args))
 
     @app.post("/rest-admin/procedures/create")
     def rest_admin_create_rest_procedure():
@@ -934,21 +1013,8 @@ def register_routes(app: Flask) -> None:
         service_path = request.form.get("service_path", "").strip()
         auth_required = request.form.get("auth_required", "Not Required") == "Required"
         body_sql = request.form.get("body_sql", "").strip()
-        param_names = request.form.getlist("param_name")
-        param_types = request.form.getlist("param_type")
-        param_modes = request.form.getlist("param_mode")
-
-        parameters: list[dict[str, str]] = []
-        for name, param_type, mode in zip(param_names, param_types, param_modes):
-            if not name.strip() and not param_type.strip():
-                continue
-            parameters.append(
-                {
-                    "name": name.strip(),
-                    "type": param_type.strip(),
-                    "mode": mode.strip().upper(),
-                }
-            )
+        action = request.form.get("action", "generate")
+        parameters = _procedure_parameters_from_form()
 
         if not procedure_name or not service_path or not body_sql:
             flash("Enter the procedure name, choose a REST service, and provide the SQL body.", "error")
@@ -964,19 +1030,30 @@ def register_routes(app: Flask) -> None:
             )
 
         try:
-            result = create_rest_procedure_definition(
+            result = build_rest_procedure_definition(
                 procedure_name=procedure_name,
                 service_path=service_path,
                 auth_required=auth_required,
                 parameters=parameters,
                 body_sql=body_sql,
             )
-            flash(
-                f"Created stored procedure restapidb.{result['procedure_name']} and exposed {result['endpoint']} ({result['auth_required']}).",
-                "info",
-            )
+            redirect_args = {
+                "tab": "user",
+                "service_path": service_path,
+                "procedure_name": procedure_name,
+                "procedure_auth_required": "Required" if auth_required else "Not Required",
+                "procedure_body": body_sql,
+            }
+            if action == "execute":
+                return _execute_generated_rest_sql(
+                    slug="expose-sp-as-service",
+                    sql=request.form.get("sql", result["sql"]),
+                    redirect_args=redirect_args,
+                )
+            _store_rest_sql_state("expose-sp-as-service", sql=result["sql"])
+            flash("Generated REST procedure SQL.", "info")
         except Exception as exc:
-            flash(f"REST procedure creation failed: {exc}", "error")
+            flash(f"REST procedure SQL generation failed: {exc}", "error")
             return redirect(
                 url_for(
                     "dashboard",
@@ -989,7 +1066,7 @@ def register_routes(app: Flask) -> None:
                 )
             )
 
-        return redirect(url_for("dashboard", slug="list-restful-services"))
+        return redirect(url_for("dashboard", slug="expose-sp-as-service", **redirect_args))
 
     @app.post("/rest-admin/procedures/expose-sys")
     def rest_admin_expose_sys_procedure():
@@ -1000,6 +1077,18 @@ def register_routes(app: Flask) -> None:
         service_path = request.form.get("service_path", "").strip()
         procedure_name = request.form.get("procedure_name", "").strip()
         auth_required = request.form.get("auth_required", "Not Required") == "Required"
+        action = request.form.get("action", "generate")
+
+        if action == "execute" and request.form.get("sql"):
+            return _execute_generated_rest_sql(
+                slug="expose-sp-as-service",
+                sql=request.form.get("sql", ""),
+                redirect_args={
+                    "tab": "sys",
+                    "service_path": service_path,
+                    "procedure_auth_required": "Required" if auth_required else "Not Required",
+                },
+            )
 
         if not service_path or not procedure_name:
             flash("Choose a REST service and a SYS stored procedure to expose.", "error")
@@ -1013,18 +1102,27 @@ def register_routes(app: Flask) -> None:
             )
 
         try:
-            result = expose_existing_schema_procedure(
+            result = build_expose_existing_schema_procedure(
                 source_schema="sys",
                 procedure_name=procedure_name,
                 service_path=service_path,
                 auth_required=auth_required,
             )
-            flash(
-                f"Exposed sys.{result['procedure_name']} as {result['endpoint']} ({result['auth_required']}).",
-                "info",
-            )
+            redirect_args = {
+                "tab": "sys",
+                "service_path": service_path,
+                "procedure_auth_required": "Required" if auth_required else "Not Required",
+            }
+            if action == "execute":
+                return _execute_generated_rest_sql(
+                    slug="expose-sp-as-service",
+                    sql=request.form.get("sql", result["sql"]),
+                    redirect_args=redirect_args,
+                )
+            _store_rest_sql_state("expose-sp-as-service", sql=result["sql"])
+            flash("Generated SYS procedure exposure SQL.", "info")
         except Exception as exc:
-            flash(f"SYS procedure exposure failed: {exc}", "error")
+            flash(f"SYS procedure exposure SQL generation failed: {exc}", "error")
             return redirect(
                 url_for(
                     "dashboard",
@@ -1035,7 +1133,7 @@ def register_routes(app: Flask) -> None:
                 )
             )
 
-        return redirect(url_for("dashboard", slug="list-restful-services"))
+        return redirect(url_for("dashboard", slug="expose-sp-as-service", **redirect_args))
 
     @app.route("/login", methods=["GET", "POST"])
     def login():

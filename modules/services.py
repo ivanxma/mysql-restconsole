@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 from modules.mysql_service import (
+    build_expose_database_to_service_definition,
+    build_expose_existing_schema_procedure,
+    build_rest_procedure_definition,
+    build_rest_service_definition,
+    build_rest_service_path_definition,
     classify_role,
     create_user_account,
     create_rest_procedure_definition,
@@ -26,6 +31,7 @@ from modules.mysql_service import (
     list_tables,
     list_users_with_roles,
     non_system_users,
+    run_admin_connector_sql,
     run_admin_ddl,
     run_admin_sql,
     special_privilege_categories,

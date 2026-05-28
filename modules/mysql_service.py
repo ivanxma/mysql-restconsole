@@ -369,6 +369,17 @@ def run_admin_sql(sql: str, *, raw_output: bool = False) -> list[dict[str, Any]]
     return run_profile_sql(sql, username=CONFIG.admin_username, password=CONFIG.admin_password, raw_output=raw_output)
 
 
+def run_admin_connector_sql(sql: str, *, raw_output: bool = True) -> list[dict[str, Any]] | str:
+    from flask import has_request_context, session
+
+    if has_request_context() and session.get("connection_profile") and session.get("db_username"):
+        password = get_profile_password(str(session.get("profile_credential_token", "")))
+        if not password:
+            raise RuntimeError("Profile DB session expired. Log in to the profile again.")
+        return _run_connector_sql(sql, username=str(session["db_username"]), password=password, raw_output=raw_output)
+    return _run_connector_sql(sql, username=CONFIG.admin_username, password=CONFIG.admin_password, raw_output=raw_output)
+
+
 def run_admin_ddl(sql: str) -> None:
     run_admin_sql(sql, raw_output=True)
 
@@ -767,7 +778,7 @@ def _ensure_rest_auth_app(service_path: str) -> list[str]:
     ]
 
 
-def create_rest_service_path_definition(*, service_name: str) -> dict[str, str]:
+def build_rest_service_path_definition(*, service_name: str) -> dict[str, str]:
     service_slug = _slugify_path_segment(service_name, "REST service path name")
     service_path = f"/{service_slug}"
     sql = (
@@ -775,14 +786,20 @@ def create_rest_service_path_definition(*, service_name: str) -> dict[str, str]:
         f"    COMMENT {_comment_literal(f'Rest service path {service_path}')}\n"
         f"    PUBLISHED"
     )
-    run_admin_ddl(sql)
-    invalidate_cached_values("rest-services:")
     return {
+        "sql": sql,
         "service_path": service_path,
     }
 
 
-def expose_database_to_service_definition(
+def create_rest_service_path_definition(*, service_name: str) -> dict[str, str]:
+    result = build_rest_service_path_definition(service_name=service_name)
+    run_admin_ddl(result["sql"])
+    invalidate_cached_values("rest-services:")
+    return result
+
+
+def build_expose_database_to_service_definition(
     *,
     service_path: str,
     source_schema: str,
@@ -805,9 +822,9 @@ def expose_database_to_service_definition(
         f"    AUTHENTICATION {auth_mode}\n"
         f"    COMMENT {_comment_literal(f'Rest schema for {source_schema_name}')}"
     )
-    run_admin_ddl(";\n\n".join(statements))
-    invalidate_cached_values("rest-services:")
+    sql = ";\n\n".join(statements)
     return {
+        "sql": sql,
         "service_path": normalized_service_path,
         "schema_path": schema_path,
         "source_schema": source_schema_name,
@@ -815,7 +832,23 @@ def expose_database_to_service_definition(
     }
 
 
-def create_rest_service_definition(
+def expose_database_to_service_definition(
+    *,
+    service_path: str,
+    source_schema: str,
+    auth_required: bool,
+) -> dict[str, str]:
+    result = build_expose_database_to_service_definition(
+        service_path=service_path,
+        source_schema=source_schema,
+        auth_required=auth_required,
+    )
+    run_admin_ddl(result["sql"])
+    invalidate_cached_values("rest-services:")
+    return result
+
+
+def build_rest_service_definition(
     *,
     service_path: str,
     source_schema: str,
@@ -877,9 +910,9 @@ def create_rest_service_definition(
         ]
     )
 
-    run_admin_ddl(";\n\n".join(statements))
-    invalidate_cached_values("rest-objects:", "rest-services:", "base-tables:", "columns:")
+    sql = ";\n\n".join(statements)
     return {
+        "sql": sql,
         "service_path": normalized_service_path,
         "schema_path": schema_path,
         "object_path": object_path,
@@ -888,6 +921,24 @@ def create_rest_service_definition(
         "auth_required": "Required" if auth_required else "Not Required",
         "source_table": f"{source_schema_name}.{source_table_name}",
     }
+
+
+def create_rest_service_definition(
+    *,
+    service_path: str,
+    source_schema: str,
+    source_table: str,
+    auth_required: bool,
+) -> dict[str, str]:
+    result = build_rest_service_definition(
+        service_path=service_path,
+        source_schema=source_schema,
+        source_table=source_table,
+        auth_required=auth_required,
+    )
+    run_admin_ddl(result["sql"])
+    invalidate_cached_values("rest-objects:", "rest-services:", "base-tables:", "columns:")
+    return result
 
 
 def list_rest_service_paths() -> list[str]:
@@ -912,7 +963,7 @@ def list_rest_service_paths() -> list[str]:
     return set_cached_value(cache_key, service_paths)
 
 
-def create_rest_procedure_definition(
+def build_rest_procedure_definition(
     *,
     procedure_name: str,
     service_path: str,
@@ -968,9 +1019,9 @@ def create_rest_procedure_definition(
     )
     sql_parts.append(rest_procedure_sql)
 
-    run_admin_ddl(";\n\n".join(sql_parts))
-    invalidate_cached_values("rest-objects:", "rest-services:")
+    sql = ";\n\n".join(sql_parts)
     return {
+        "sql": sql,
         "procedure_name": procedure_name_clean,
         "service_path": normalized_service_path,
         "endpoint": f"{normalized_service_path}/restapidb/{procedure_name_clean.lower()}",
@@ -978,7 +1029,27 @@ def create_rest_procedure_definition(
     }
 
 
-def expose_existing_schema_procedure(
+def create_rest_procedure_definition(
+    *,
+    procedure_name: str,
+    service_path: str,
+    auth_required: bool,
+    parameters: list[dict[str, str]],
+    body_sql: str,
+) -> dict[str, str]:
+    result = build_rest_procedure_definition(
+        procedure_name=procedure_name,
+        service_path=service_path,
+        auth_required=auth_required,
+        parameters=parameters,
+        body_sql=body_sql,
+    )
+    run_admin_ddl(result["sql"])
+    invalidate_cached_values("rest-objects:", "rest-services:")
+    return result
+
+
+def build_expose_existing_schema_procedure(
     *,
     source_schema: str,
     procedure_name: str,
@@ -1062,9 +1133,9 @@ def expose_existing_schema_procedure(
             f"COMMENT {_comment_literal(f'Rest procedure for {source_schema_name}.{procedure_name_clean}')}"
         )
 
-    run_admin_ddl(";\n\n".join(sql_parts))
-    invalidate_cached_values("rest-objects:", "rest-services:", "procedure-params:")
+    sql = ";\n\n".join(sql_parts)
     return {
+        "sql": sql,
         "procedure_name": procedure_name_clean,
         "service_path": normalized_service_path,
         "endpoint": f"{normalized_service_path}{schema_path}/{procedure_name_clean.lower()}",
@@ -1072,3 +1143,21 @@ def expose_existing_schema_procedure(
         "schema_path": schema_path,
         "wrapper_name": wrapper_name,
     }
+
+
+def expose_existing_schema_procedure(
+    *,
+    source_schema: str,
+    procedure_name: str,
+    service_path: str,
+    auth_required: bool,
+) -> dict[str, str]:
+    result = build_expose_existing_schema_procedure(
+        source_schema=source_schema,
+        procedure_name=procedure_name,
+        service_path=service_path,
+        auth_required=auth_required,
+    )
+    run_admin_ddl(result["sql"])
+    invalidate_cached_values("rest-objects:", "rest-services:", "procedure-params:")
+    return result
