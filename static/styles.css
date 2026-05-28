@@ -784,6 +784,84 @@ body {
   grid-column: span 1;
 }
 
+.profile-editor-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.32fr) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.profile-list-panel,
+.profile-detail-panel {
+  min-width: 0;
+}
+
+.profile-list-panel {
+  padding: 16px;
+  border-radius: 22px;
+  background: rgba(255, 251, 245, 0.72);
+  border: 1px solid rgba(84, 50, 20, 0.08);
+}
+
+.profile-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.profile-list-head h4 {
+  margin: 0;
+}
+
+.profile-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.profile-list-link {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  padding: 12px 14px;
+  border-radius: 16px;
+  color: var(--ink);
+  text-decoration: none;
+  background: rgba(255, 255, 255, 0.62);
+  border: 1px solid rgba(84, 50, 20, 0.08);
+}
+
+.profile-list-link:hover,
+.profile-list-link.is-active {
+  border-color: rgba(217, 76, 23, 0.28);
+  background: var(--surface-strong);
+}
+
+.profile-list-link strong,
+.profile-list-link span {
+  overflow-wrap: anywhere;
+}
+
+.profile-list-link span {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.profile-action-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.danger-button {
+  color: var(--accent-deep);
+  background: rgba(169, 31, 9, 0.08);
+}
+
 .field select {
   width: 100%;
   padding: 14px 16px;
@@ -1081,7 +1159,8 @@ body {
   .app-shell,
   .login-stage,
   .content-grid,
-  .hero-panel {
+  .hero-panel,
+  .profile-editor-grid {
     grid-template-columns: 1fr;
   }
 

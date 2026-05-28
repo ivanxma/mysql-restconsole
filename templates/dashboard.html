@@ -158,92 +158,103 @@
       <p class="panel-copy">Update the saved connection profile used by DB metadata operations and MRS endpoint tests.</p>
     </div>
   </div>
-  <form class="stack-form selector-form" action="{{ url_for('dashboard', slug='config') }}" method="get">
-    <div class="form-grid form-grid-wide">
-      <label class="field">
-        <span>Profile</span>
-        <select name="profile" onchange="this.form.submit()">
-          {% for profile_item in editable_config_profiles %}
-          <option value="{{ profile_item.name }}" {% if config_profile_name == profile_item.name %}selected{% endif %}>{{ profile_item.label }}</option>
-          {% endfor %}
-        </select>
-      </label>
-    </div>
-  </form>
-  <form class="stack-form" action="{{ url_for('admin_update_config_profile') }}" method="post">
-    <input type="hidden" name="profile_name" value="{{ config_profile.name }}">
-    <div class="form-grid">
-      <label class="field">
-        <span>Profile Label</span>
-        <input type="text" name="label" value="{{ config_profile.label }}" required>
-      </label>
-      <label class="field">
-        <span>DB Host</span>
-        <input type="text" name="db_host" value="{{ config_profile.db_host }}" required>
-      </label>
-      <label class="field">
-        <span>DB Port</span>
-        <input type="number" name="db_port" value="{{ config_profile.db_port }}" min="1" max="65535" required>
-      </label>
-      <label class="field">
-        <span>REST Endpoint Host</span>
-        <input type="text" name="api_host" value="{{ config_profile.api_host }}" required>
-      </label>
-      <label class="field">
-        <span>REST Endpoint Port</span>
-        <input type="number" name="api_port" value="{{ config_profile.api_port }}" min="1" max="65535" required>
-      </label>
-    </div>
-    <section class="subsection-card">
-      <div class="panel-head">
-        <div>
-          <h4>SSH Tunnel</h4>
-          <p class="panel-copy">When enabled, login starts local DB and REST endpoint tunnels through the jump host.</p>
-        </div>
+  <div class="profile-editor-grid">
+    <aside class="profile-list-panel">
+      <div class="profile-list-head">
+        <h4>Profiles</h4>
       </div>
-      <label class="toggle-field">
-        <input type="checkbox" name="use_ssh_tunnel" id="config-use-ssh-tunnel" {% if config_profile.use_ssh_tunnel %}checked{% endif %}>
-        <span>Using SSH Tunnel</span>
-      </label>
-      <div class="login-tunnel-fields" id="config-tunnel-fields">
-        <div class="form-grid">
-          <label class="field">
-            <span>Private Key</span>
-            <input type="text" name="ssh_key_path" value="{{ config_profile.ssh_key_path }}" placeholder="~/.ssh/id_rsa">
-          </label>
-          <label class="field">
-            <span>Jump Host IP</span>
-            <input type="text" name="ssh_jump_host" value="{{ config_profile.ssh_jump_host }}" placeholder="bastion.example.com">
-          </label>
-          <label class="field">
-            <span>Jump Host User</span>
-            <input type="text" name="ssh_jump_user" value="{{ config_profile.ssh_jump_user }}" placeholder="opc">
-          </label>
-        </div>
-        <div class="form-grid">
-          <label class="field">
-            <span>Local DB Port</span>
-            <input type="number" name="local_db_port" value="{{ config_profile.local_db_port }}" min="1" max="65535">
-          </label>
-          <label class="field">
-            <span>Local REST Endpoint Port</span>
-            <input type="number" name="local_api_port" value="{{ config_profile.local_api_port }}" min="1" max="65535">
-          </label>
-        </div>
+      <nav class="profile-list">
+        {% for profile_item in editable_config_profiles %}
+        <a class="profile-list-link {% if config_profile_name == profile_item.name %}is-active{% endif %}" href="{{ url_for('dashboard', slug='config', profile=profile_item.name) }}">
+          <strong>{{ profile_item.label }}</strong>
+          <span>{{ profile_item.name }}</span>
+        </a>
+        {% endfor %}
+      </nav>
+    </aside>
+    <form class="stack-form profile-detail-panel" action="{{ url_for('admin_update_config_profile') }}" method="post" id="config-profile-form">
+      <input type="hidden" name="original_profile_name" id="config-original-profile-name" value="{{ config_profile.name }}">
+      <div class="form-grid">
+        <label class="field">
+          <span>Profile Name</span>
+          <input type="text" name="profile_name" id="config-profile-name" value="{{ config_profile.name }}" required>
+        </label>
+        <label class="field">
+          <span>Profile Label</span>
+          <input type="text" name="label" id="config-profile-label" value="{{ config_profile.label }}" required>
+        </label>
+        <label class="field">
+          <span>DB Host</span>
+          <input type="text" name="db_host" id="config-db-host" value="{{ config_profile.db_host }}" required>
+        </label>
+        <label class="field">
+          <span>DB Port</span>
+          <input type="number" name="db_port" id="config-db-port" value="{{ config_profile.db_port }}" min="1" max="65535" required>
+        </label>
+        <label class="field">
+          <span>REST Endpoint Host</span>
+          <input type="text" name="api_host" id="config-api-host" value="{{ config_profile.api_host }}" required>
+        </label>
+        <label class="field">
+          <span>REST Endpoint Port</span>
+          <input type="number" name="api_port" id="config-api-port" value="{{ config_profile.api_port }}" min="1" max="65535" required>
+        </label>
       </div>
-    </section>
-    <div class="preview-grid">
-      <article class="preview-card">
-        <span>DB Runtime</span>
-        <strong>{% if config_profile.use_ssh_tunnel %}127.0.0.1:{{ config_profile.local_db_port }}{% else %}{{ config_profile.db_host }}:{{ config_profile.db_port }}{% endif %}</strong>
-      </article>
-      <article class="preview-card">
-        <span>REST Runtime</span>
-        <strong>{% if config_profile.use_ssh_tunnel %}127.0.0.1:{{ config_profile.local_api_port }}{% else %}{{ config_profile.api_host }}:{{ config_profile.api_port }}{% endif %}</strong>
-      </article>
-    </div>
-    <button class="primary-button" type="submit">Save Config</button>
-  </form>
+      <section class="subsection-card">
+        <div class="panel-head">
+          <div>
+            <h4>SSH Tunnel</h4>
+            <p class="panel-copy">When enabled, login starts local DB and REST endpoint tunnels through the jump host.</p>
+          </div>
+        </div>
+        <label class="toggle-field">
+          <input type="checkbox" name="use_ssh_tunnel" id="config-use-ssh-tunnel" {% if config_profile.use_ssh_tunnel %}checked{% endif %}>
+          <span>Using SSH Tunnel</span>
+        </label>
+        <div class="login-tunnel-fields" id="config-tunnel-fields">
+          <div class="form-grid">
+            <label class="field">
+              <span>Private Key</span>
+              <input type="text" name="ssh_key_path" id="config-ssh-key-path" value="{{ config_profile.ssh_key_path }}" placeholder="~/.ssh/id_rsa">
+            </label>
+            <label class="field">
+              <span>Jump Host IP</span>
+              <input type="text" name="ssh_jump_host" id="config-ssh-jump-host" value="{{ config_profile.ssh_jump_host }}" placeholder="bastion.example.com">
+            </label>
+            <label class="field">
+              <span>Jump Host User</span>
+              <input type="text" name="ssh_jump_user" id="config-ssh-jump-user" value="{{ config_profile.ssh_jump_user }}" placeholder="opc">
+            </label>
+          </div>
+          <div class="form-grid">
+            <label class="field">
+              <span>Local DB Port</span>
+              <input type="number" name="local_db_port" id="config-local-db-port" value="{{ config_profile.local_db_port }}" min="1" max="65535">
+            </label>
+            <label class="field">
+              <span>Local REST Endpoint Port</span>
+              <input type="number" name="local_api_port" id="config-local-api-port" value="{{ config_profile.local_api_port }}" min="1" max="65535">
+            </label>
+          </div>
+        </div>
+      </section>
+      <div class="preview-grid">
+        <article class="preview-card">
+          <span>DB Runtime</span>
+          <strong>{% if config_profile.use_ssh_tunnel %}127.0.0.1:{{ config_profile.local_db_port }}{% else %}{{ config_profile.db_host }}:{{ config_profile.db_port }}{% endif %}</strong>
+        </article>
+        <article class="preview-card">
+          <span>REST Runtime</span>
+          <strong>{% if config_profile.use_ssh_tunnel %}127.0.0.1:{{ config_profile.local_api_port }}{% else %}{{ config_profile.api_host }}:{{ config_profile.api_port }}{% endif %}</strong>
+        </article>
+      </div>
+      <div class="profile-action-row">
+        <button class="ghost-button" type="button" id="config-new-profile-button">New</button>
+        <button class="ghost-button danger-button" type="submit" name="action" value="delete" onclick="return confirm('Delete this profile?')">Delete</button>
+        <button class="primary-button" type="submit" name="action" value="update">Update</button>
+      </div>
+    </form>
+  </div>
   <section class="subsection-card">
     <div class="panel-head">
       <div>
@@ -273,7 +284,7 @@
           <span>Profile</span>
           <select name="profile_name" required>
             {% for profile_item in editable_config_profiles %}
-            <option value="{{ profile_item.name }}">{{ profile_item.label }}</option>
+            <option value="{{ profile_item.name }}" {% if config_profile_name == profile_item.name %}selected{% endif %}>{{ profile_item.label }}</option>
             {% endfor %}
           </select>
         </label>
@@ -315,6 +326,50 @@
 
     toggle.addEventListener("change", syncTunnelFields);
     syncTunnelFields();
+    window.syncConfigTunnelFields = syncTunnelFields;
+  })();
+  (() => {
+    const newButton = document.getElementById("config-new-profile-button");
+    if (!newButton) return;
+
+    const fields = {
+      originalName: document.getElementById("config-original-profile-name"),
+      profileName: document.getElementById("config-profile-name"),
+      label: document.getElementById("config-profile-label"),
+      dbHost: document.getElementById("config-db-host"),
+      dbPort: document.getElementById("config-db-port"),
+      apiHost: document.getElementById("config-api-host"),
+      apiPort: document.getElementById("config-api-port"),
+      useTunnel: document.getElementById("config-use-ssh-tunnel"),
+      sshKeyPath: document.getElementById("config-ssh-key-path"),
+      sshJumpHost: document.getElementById("config-ssh-jump-host"),
+      sshJumpUser: document.getElementById("config-ssh-jump-user"),
+      localDbPort: document.getElementById("config-local-db-port"),
+      localApiPort: document.getElementById("config-local-api-port"),
+    };
+
+    function setValue(input, value) {
+      if (input) input.value = value;
+    }
+
+    newButton.addEventListener("click", () => {
+      const suffix = new Date().toISOString().replace(/[-:TZ.]/g, "").slice(0, 14);
+      setValue(fields.originalName, "");
+      setValue(fields.profileName, `profile-${suffix}`);
+      setValue(fields.label, "New Profile");
+      setValue(fields.dbHost, "127.0.0.1");
+      setValue(fields.dbPort, "3306");
+      setValue(fields.apiHost, "127.0.0.1");
+      setValue(fields.apiPort, "443");
+      setValue(fields.sshKeyPath, "");
+      setValue(fields.sshJumpHost, "");
+      setValue(fields.sshJumpUser, "opc");
+      setValue(fields.localDbPort, "3306");
+      setValue(fields.localApiPort, "8443");
+      if (fields.useTunnel) fields.useTunnel.checked = false;
+      if (window.syncConfigTunnelFields) window.syncConfigTunnelFields();
+      if (fields.profileName) fields.profileName.focus();
+    });
   })();
   (() => {
     const subjectType = document.getElementById("assignment-subject-type");

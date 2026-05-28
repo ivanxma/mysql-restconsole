@@ -115,6 +115,16 @@ def _ensure_schema(connection) -> None:
             )
             """
         )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS profile_assignments (
+                profile_name VARCHAR(128) NOT NULL,
+                subject_type ENUM('user','group') NOT NULL,
+                subject_name VARCHAR(128) NOT NULL,
+                PRIMARY KEY (profile_name, subject_type, subject_name)
+            )
+            """
+        )
 
 
 def load_profiles() -> list[dict[str, Any]]:
@@ -202,3 +212,39 @@ def update_profile(name: str, updates: dict[str, Any]) -> dict[str, Any]:
     profiles.append(updated)
     save_profiles(profiles)
     return dict(updated)
+
+
+def delete_profile(name: str) -> bool:
+    selected = str(name or "").strip()
+    if not selected or selected == LOCAL_ADMIN_PROFILE_NAME:
+        return False
+    connection = _configdb_connection()
+    _ensure_schema(connection)
+    with connection.cursor() as cursor:
+        cursor.execute("DELETE FROM connection_profiles WHERE name = %s AND profile_management = FALSE", (selected,))
+        deleted = cursor.rowcount > 0
+        cursor.execute("DELETE FROM profile_assignments WHERE profile_name = %s", (selected,))
+    connection.close()
+    return deleted
+
+
+def rename_profile_assignments(old_name: str, new_name: str) -> None:
+    original = str(old_name or "").strip()
+    selected = str(new_name or "").strip()
+    if not original or not selected or original == selected:
+        return
+    if original == LOCAL_ADMIN_PROFILE_NAME or selected == LOCAL_ADMIN_PROFILE_NAME:
+        return
+    connection = _configdb_connection()
+    _ensure_schema(connection)
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            INSERT IGNORE INTO profile_assignments (profile_name, subject_type, subject_name)
+            SELECT %s, subject_type, subject_name
+            FROM profile_assignments
+            WHERE profile_name = %s
+            """,
+            (selected, original),
+        )
+    connection.close()

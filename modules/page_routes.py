@@ -20,7 +20,14 @@ from modules.local_auth import (
     list_profile_assignments,
     list_user_group_memberships,
 )
-from modules.profile_store import LOCAL_ADMIN_PROFILE_NAME, get_profile, profile_names, update_profile
+from modules.profile_store import (
+    LOCAL_ADMIN_PROFILE_NAME,
+    delete_profile,
+    get_profile,
+    profile_names,
+    rename_profile_assignments,
+    update_profile,
+)
 from modules.update_service import poll_token_matches, read_update_status, start_update_job
 from modules.services import (
     classify_role,
@@ -71,6 +78,17 @@ def _parse_int_field(raw_value: str, *, label: str) -> int:
     if value <= 0 or value > 65535:
         raise RuntimeError(f"{label} must be between 1 and 65535.")
     return value
+
+
+def _parse_profile_name(raw_value: str) -> str:
+    profile_name = str(raw_value or "").strip()
+    if not profile_name:
+        raise RuntimeError("Profile name is required.")
+    if not all(char.isalnum() or char in {"-", "_"} for char in profile_name):
+        raise RuntimeError("Profile name must use letters, numbers, dashes, or underscores only.")
+    if profile_name == LOCAL_ADMIN_PROFILE_NAME:
+        raise RuntimeError("The local admin socket profile is managed by setup and cannot be edited here.")
+    return profile_name
 
 
 def _build_login_profile(form_data) -> dict[str, Any]:
@@ -433,17 +451,31 @@ def register_routes(app: Flask) -> None:
         user = current_user()
         if not user or user["role"] != "admin":
             return redirect(url_for("login"))
-        profile_name = request.form.get("profile_name", "").strip() or "default"
-        if profile_name == LOCAL_ADMIN_PROFILE_NAME:
-            flash("The local admin socket profile is managed by setup and cannot be edited here.", "error")
-            return redirect(url_for("dashboard", slug="config"))
+        original_profile_name = request.form.get("original_profile_name", "").strip()
+        action = request.form.get("action", "update").strip()
         try:
+            if action == "delete":
+                profile_name = _parse_profile_name(original_profile_name)
+                if not original_profile_name:
+                    raise RuntimeError("Select a saved profile before deleting.")
+                if len(_editable_connection_profiles()) <= 1:
+                    raise RuntimeError("At least one DB profile must remain.")
+                if not delete_profile(original_profile_name):
+                    raise RuntimeError("Profile was not deleted.")
+                flash(f"Deleted profile {original_profile_name}.", "info")
+                return redirect(url_for("dashboard", slug="config", profile=_default_editable_profile_name()))
+
+            profile_name = _parse_profile_name(request.form.get("profile_name", ""))
             updated = update_profile(profile_name, _build_config_profile(request.form))
+            if action == "update" and original_profile_name and original_profile_name != profile_name:
+                rename_profile_assignments(original_profile_name, profile_name)
+                delete_profile(original_profile_name)
             if session.get("connection_profile", {}).get("name") == updated["name"]:
                 session["connection_profile"] = updated
-            flash(f"Updated profile {updated['label']}.", "info")
+            flash(f"Saved profile {updated['label']}.", "info")
         except Exception as exc:
             flash(f"Configuration update failed: {exc}", "error")
+            profile_name = original_profile_name or request.form.get("profile_name", "").strip() or _default_editable_profile_name()
         return redirect(url_for("dashboard", slug="config", profile=profile_name))
 
     @app.post("/admin/local-users/create")
@@ -505,15 +537,17 @@ def register_routes(app: Flask) -> None:
         user = current_user()
         if not user or user["role"] != "admin":
             return redirect(url_for("login"))
-        profile_name = request.form.get("profile_name", "").strip()
+        raw_profile_name = request.form.get("profile_name", "").strip()
         subject_type = request.form.get("subject_type", "").strip()
         subject_name = request.form.get("subject_name", "").strip()
-        if not profile_name or not subject_type or not subject_name:
+        if not raw_profile_name or not subject_type or not subject_name:
             flash("Profile assignment requires profile, target type, and target name.", "error")
-        elif profile_name == LOCAL_ADMIN_PROFILE_NAME:
-            flash("The local admin profile cannot be assigned for second-level profile login.", "error")
         else:
             try:
+                profile_name = _parse_profile_name(raw_profile_name)
+                editable_names = {item["name"] for item in _editable_connection_profiles()}
+                if profile_name not in editable_names:
+                    raise RuntimeError("Profile does not exist.")
                 assign_profile(profile_name, subject_type, subject_name)
                 flash(f"Assigned {profile_name} to {subject_type} {subject_name}.", "info")
             except Exception as exc:
