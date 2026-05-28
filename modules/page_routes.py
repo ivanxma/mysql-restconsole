@@ -32,12 +32,14 @@ from modules.profile_store import (
 from modules.profile_session_store import clear_profile_password, store_profile_password
 from modules.update_service import poll_token_matches, read_update_status, start_update_job
 from modules.services import (
+    build_delete_rest_service_paths_definition,
     build_expose_database_to_service_definition,
     build_expose_existing_schema_procedure,
     build_rest_procedure_definition,
     build_rest_service_definition,
     build_rest_service_path_definition,
     classify_role,
+    connection_dashboard_status,
     create_user_account,
     default_special_priv_category,
     delete_selected_users,
@@ -62,6 +64,7 @@ from modules.services import (
     list_users_with_roles,
     non_system_users,
     run_admin_connector_sql,
+    run_admin_sql,
     special_privilege_categories,
     start_shared_tunnels,
     stop_all_shared_tunnels,
@@ -115,7 +118,7 @@ def _store_rest_sql_state(slug: str, *, sql: str = "", result: str = "", error: 
 
 def _execute_generated_rest_sql(*, slug: str, sql: str, redirect_args: dict[str, str]):
     try:
-        output = run_admin_connector_sql(sql, raw_output=True)
+        output = run_admin_sql(sql, raw_output=True)
         result = str(output).strip() or "SQL executed successfully."
         _store_rest_sql_state(slug, sql=sql, result=result)
         flash("SQL executed with the active profile session.", "info")
@@ -399,6 +402,12 @@ def _dashboard_context_for_admin(slug: str) -> dict[str, Any]:
         "local_groups": local_groups,
         "user_group_memberships": user_group_memberships,
         "profile_assignments": profile_assignments,
+    }
+
+
+def _dashboard_context_for_status() -> dict[str, Any]:
+    return {
+        "dashboard_status": connection_dashboard_status(),
     }
 
 
@@ -854,6 +863,28 @@ def register_routes(app: Flask) -> None:
         service_name = request.form.get("service_name", "").strip()
         action = request.form.get("action", "generate")
 
+        if action == "execute" and request.form.get("sql"):
+            return _execute_generated_rest_sql(
+                slug="create-restful-service",
+                sql=request.form.get("sql", ""),
+                redirect_args={"service_name": service_name},
+            )
+
+        if action in {"delete-selected", "delete-one"}:
+            selected_paths = request.form.getlist("selected_service_paths")
+            single_path = request.form.get("service_path", "").strip()
+            if single_path:
+                selected_paths = [single_path]
+            try:
+                existing_paths = set(list_rest_service_paths())
+                selected_paths = [path for path in selected_paths if path in existing_paths]
+                result = build_delete_rest_service_paths_definition(service_paths=selected_paths)
+                _store_rest_sql_state("create-restful-service", sql=result["sql"])
+                flash(f"Generated delete SQL for {result['service_paths']}.", "info")
+            except Exception as exc:
+                flash(f"REST service delete SQL generation failed: {exc}", "error")
+            return redirect(url_for("dashboard", slug="create-restful-service", service_name=service_name))
+
         if not service_name:
             flash("Enter the REST service path name.", "error")
             return redirect(
@@ -866,12 +897,6 @@ def register_routes(app: Flask) -> None:
 
         try:
             result = build_rest_service_path_definition(service_name=service_name)
-            if action == "execute":
-                return _execute_generated_rest_sql(
-                    slug="create-restful-service",
-                    sql=request.form.get("sql", result["sql"]),
-                    redirect_args={"service_name": service_name},
-                )
             _store_rest_sql_state("create-restful-service", sql=result["sql"])
             flash("Generated REST service SQL.", "info")
         except Exception as exc:
@@ -1359,7 +1384,9 @@ def register_routes(app: Flask) -> None:
             "local_groups": [],
             "user_group_memberships": [],
             "profile_assignments": [],
+            "dashboard_status": {},
             "hide_hero_panel": slug in {
+                "dashboard",
                 "user",
                 "granting-privileges",
                 "restapidb",
@@ -1371,6 +1398,19 @@ def register_routes(app: Flask) -> None:
             }
             or (slug == "show-grants" and bool(session.get("connection_profile"))),
         }
+
+        if slug == "dashboard":
+            try:
+                context.update(_dashboard_context_for_status())
+            except Exception as exc:
+                context["dashboard_status"] = {
+                    "db_status": f"Failed: {exc}",
+                    "db_version": "-",
+                    "mysqlsh_path": "-",
+                    "mysqlsh_version": "-",
+                    "restful_enabled": "Unknown",
+                    "restful_detail": "-",
+                }
 
         if user["role"] == "admin":
             try:

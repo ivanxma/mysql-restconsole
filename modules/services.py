@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from modules.mysql_service import (
+    build_delete_rest_service_paths_definition,
     build_expose_database_to_service_definition,
     build_expose_existing_schema_procedure,
     build_rest_procedure_definition,
     build_rest_service_definition,
     build_rest_service_path_definition,
     classify_role,
+    connection_dashboard_status,
     create_user_account,
     create_rest_procedure_definition,
     create_rest_service_path_definition,

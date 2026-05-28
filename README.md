@@ -13,6 +13,10 @@ Flask web application for administering and testing MySQL REST Service (MRS) end
   - General User
 - REST service discovery, creation, exposure, and endpoint testing
 
+Note: MySQL REST Service syntax such as `CREATE REST SERVICE`, `CREATE REST SCHEMA`,
+and `CREATE REST VIEW` is valid in MySQL Shell MRS SQL mode. It is not accepted
+directly by a plain MySQL Server SQL session.
+
 ## Layout
 
 The code is split by responsibility:

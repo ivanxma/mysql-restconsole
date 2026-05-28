@@ -42,7 +42,7 @@ def default_subtab(slug: str) -> str:
 
 def role_home(role: str) -> str:
     if role == "admin":
-        return "local-users"
+        return "dashboard"
     if role == "local_user":
         return "profile-login"
     menu = _menu_items(role_menu(role))

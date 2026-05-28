@@ -1233,6 +1233,37 @@ body {
   margin-top: 14px;
 }
 
+.table-actions-left {
+  justify-content: flex-start;
+  margin-top: 0;
+}
+
+.inline-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.action-cell {
+  text-align: right;
+}
+
+.icon-action {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: rgba(34, 17, 17, 0.06);
+  color: var(--accent-deep);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 800;
+}
+
 .user-pick {
   display: flex;
   flex-direction: column;

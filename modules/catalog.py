@@ -14,6 +14,7 @@ ROLE_MENUS = {
         {
             "label": "Admin",
             "children": [
+                {"slug": "dashboard", "label": "Dashboard"},
                 {"slug": "local-users", "label": "User Management"},
                 {"slug": "local-groups", "label": "Group Management"},
                 {"slug": "config", "label": "Profiles"},
@@ -43,6 +44,7 @@ ROLE_MENUS = {
         {
             "label": "RestAPI",
             "children": [
+                {"slug": "dashboard", "label": "Dashboard"},
                 {"slug": "user", "label": "User"},
                 {"slug": "granting-privileges", "label": "Granting Privileges"},
                 {"slug": "restapidb", "label": "RestAPIDB"},
@@ -59,6 +61,7 @@ ROLE_MENUS = {
         {
             "label": "RestAPI",
             "children": [
+                {"slug": "dashboard", "label": "Dashboard"},
                 {"slug": "list-restful-services", "label": "List Restful Services"},
                 {"slug": "create-restful-service", "label": "Create Restful Service"},
                 {"slug": "expose-db-as-service", "label": "Expose DB as Service"},
@@ -72,6 +75,7 @@ ROLE_MENUS = {
         {
             "label": "RestAPI",
             "children": [
+                {"slug": "dashboard", "label": "Dashboard"},
                 {"slug": "list-restful-services", "label": "List Restful Services"},
                 {"slug": "show-grants", "label": "Show Grants"},
             ],
@@ -80,6 +84,15 @@ ROLE_MENUS = {
 }
 
 PAGE_CONTENT = {
+    "dashboard": {
+        "title": "Dashboard",
+        "summary": "Review the active DB profile session, MySQL Shell runtime, and MySQL REST Service availability.",
+        "items": [
+            "DB connection status is checked through the active profile session.",
+            "MySQL Shell path and version come from the app runtime configuration.",
+            "RESTful status is based on mysql_rest_service_metadata availability.",
+        ],
+    },
     "local-users": {
         "title": "User Management",
         "summary": "Create local users in embedded configdb and assign them to groups or profiles.",

@@ -284,6 +284,84 @@ def _run_mrs_sql_extensions(
     return rows
 
 
+def connection_dashboard_status() -> dict[str, str]:
+    from flask import has_request_context, session
+
+    runtime_config = get_runtime_config()
+    profile = session.get("connection_profile", {}) if has_request_context() else {}
+    info = {
+        "profile_name": str(profile.get("name", "")),
+        "profile_label": str(profile.get("label", "")),
+        "db_username": str(session.get("db_username", "")) if has_request_context() else "",
+        "db_host": str(runtime_config.host),
+        "db_port": str(runtime_config.port),
+        "api_host": str(runtime_config.api_host),
+        "api_port": str(runtime_config.api_port),
+        "connection_mode": str(profile.get("mode") or ("ssh-tunnel" if profile.get("use_ssh_tunnel") else "tcp")),
+        "db_status": "Unknown",
+        "db_version": "-",
+        "mysqlsh_path": "-",
+        "mysqlsh_version": "-",
+        "restful_enabled": "Unknown",
+        "restful_detail": "-",
+    }
+
+    try:
+        rows = run_admin_connector_sql("SELECT VERSION() AS version, @@version_comment AS version_comment", raw_output=False)
+        if rows:
+            info["db_status"] = "Connected"
+            info["db_version"] = f"{rows[0].get('version', '-')}"
+            if rows[0].get("version_comment"):
+                info["db_version"] += f" ({rows[0].get('version_comment')})"
+    except Exception as exc:
+        info["db_status"] = f"Failed: {exc}"
+
+    try:
+        mysqlsh_path = _resolve_mysqlsh_path()
+        info["mysqlsh_path"] = mysqlsh_path
+        completed = subprocess.run(
+            [mysqlsh_path, "--version"],
+            capture_output=True,
+            text=True,
+            timeout=8,
+            check=False,
+        )
+        version_output = (completed.stdout or completed.stderr or "").strip()
+        info["mysqlsh_version"] = version_output or "-"
+    except Exception as exc:
+        info["mysqlsh_version"] = f"Unavailable: {exc}"
+
+    try:
+        rows = run_admin_connector_sql(
+            """
+            SELECT COUNT(*) AS schema_count
+            FROM information_schema.schemata
+            WHERE schema_name = 'mysql_rest_service_metadata'
+            """,
+            raw_output=False,
+        )
+        schema_count = int(rows[0].get("schema_count", 0)) if rows else 0
+        if schema_count:
+            info["restful_enabled"] = "Enabled"
+            try:
+                service_rows = run_admin_connector_sql(
+                    "SELECT COUNT(*) AS service_count FROM mysql_rest_service_metadata.service",
+                    raw_output=False,
+                )
+                service_count = int(service_rows[0].get("service_count", 0)) if service_rows else 0
+                info["restful_detail"] = f"{service_count} service path(s) found"
+            except Exception as exc:
+                info["restful_detail"] = f"Metadata schema found; service count failed: {exc}"
+        else:
+            info["restful_enabled"] = "Disabled"
+            info["restful_detail"] = "mysql_rest_service_metadata schema was not found"
+    except Exception as exc:
+        info["restful_enabled"] = "Unknown"
+        info["restful_detail"] = str(exc)
+
+    return info
+
+
 def _manage_tunnel(action: str, runtime_config) -> None:
     profile = {
         "use_ssh_tunnel": runtime_config.host == "127.0.0.1" and runtime_config.api_host == "127.0.0.1",
@@ -754,6 +832,13 @@ def _slugify_path_segment(value: str, label: str) -> str:
     return cleaned
 
 
+def _require_rest_path(value: str, label: str) -> str:
+    cleaned = value.strip()
+    if not cleaned.startswith("/") or not re.fullmatch(r"/[A-Za-z0-9_./-]*", cleaned):
+        raise RuntimeError(f"{label} must start with '/' and use letters, numbers, slash, dot, dash, or underscore only.")
+    return cleaned
+
+
 def _safe_identifier(*parts: str, max_length: int = 64) -> str:
     tokens = [re.sub(r"[^A-Za-z0-9_]+", "_", part.strip().lower()).strip("_") for part in parts]
     tokens = [token for token in tokens if token]
@@ -789,6 +874,17 @@ def build_rest_service_path_definition(*, service_name: str) -> dict[str, str]:
     return {
         "sql": sql,
         "service_path": service_path,
+    }
+
+
+def build_delete_rest_service_paths_definition(*, service_paths: list[str]) -> dict[str, str]:
+    normalized_paths = [_require_rest_path(path, "REST service path") for path in service_paths if path.strip()]
+    if not normalized_paths:
+        raise RuntimeError("Select at least one REST service path to delete.")
+    statements = [f"DROP REST SERVICE {service_path}" for service_path in normalized_paths]
+    return {
+        "sql": ";\n\n".join(statements),
+        "service_paths": ", ".join(normalized_paths),
     }
 
 

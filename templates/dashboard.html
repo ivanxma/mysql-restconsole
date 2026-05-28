@@ -36,7 +36,46 @@
 </section>
 {% endif %}
 
-{% if active_slug == "local-users" %}
+{% if active_slug == "dashboard" %}
+<section class="panel">
+  <div class="panel-head">
+    <div>
+      <h4>Connection Dashboard</h4>
+      <p class="panel-copy">Runtime status for the active profile session and embedded MySQL Shell.</p>
+    </div>
+  </div>
+  <div class="preview-grid">
+    <article class="preview-card">
+      <span>DB Connection</span>
+      <strong>{{ dashboard_status.profile_label or active_connection_profile.label or 'No profile connected' }}</strong>
+      <small>{{ dashboard_status.db_username or active_connection_profile.db_username or current_user.username }}</small>
+    </article>
+    <article class="preview-card">
+      <span>Status</span>
+      <strong>{{ dashboard_status.db_status or 'Unknown' }}</strong>
+    </article>
+    <article class="preview-card preview-card-wide">
+      <span>Version</span>
+      <strong>{{ dashboard_status.db_version or '-' }}</strong>
+    </article>
+    <article class="preview-card">
+      <span>Endpoint</span>
+      <strong>{{ dashboard_status.db_host or '-' }}:{{ dashboard_status.db_port or '-' }}</strong>
+      <small>{{ dashboard_status.connection_mode or '-' }}</small>
+    </article>
+    <article class="preview-card preview-card-wide">
+      <span>MySQL Shell Path</span>
+      <strong>{{ dashboard_status.mysqlsh_path or '-' }}</strong>
+      <small>{{ dashboard_status.mysqlsh_version or '-' }}</small>
+    </article>
+    <article class="preview-card">
+      <span>RESTful Enabled</span>
+      <strong>{{ dashboard_status.restful_enabled or 'Unknown' }}</strong>
+      <small>{{ dashboard_status.restful_detail or '-' }}</small>
+    </article>
+  </div>
+</section>
+{% elif active_slug == "local-users" %}
 <section class="panel">
   <div class="panel-head"><div><h4>Local Users</h4><p class="panel-copy">Users are stored in embedded MySQL configdb.</p></div></div>
   <div class="table-wrap">
@@ -679,13 +718,45 @@
         <p class="panel-copy">Current REST service paths already defined in MySQL HeatWave MRS.</p>
       </div>
     </div>
-    <div class="grant-list">
-      {% for service_path in available_services %}
-      <code>{{ service_path }}</code>
-      {% else %}
-      <p class="panel-copy">No REST service paths exist yet.</p>
-      {% endfor %}
-    </div>
+    <form class="stack-form" action="{{ url_for('rest_admin_create_restful_service') }}" method="post">
+      <input type="hidden" name="service_name" value="{{ rest_service_form.service_name }}">
+      <div class="table-actions table-actions-left">
+        <button class="ghost-button danger-button" type="submit" name="action" value="delete-selected">Delete Selected</button>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Select</th>
+              <th>Service Path</th>
+              <th class="action-cell">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for service_path in available_services %}
+            <tr>
+              <td>
+                <label class="inline-check">
+                  <input type="checkbox" name="selected_service_paths" value="{{ service_path }}">
+                  <span>Select</span>
+                </label>
+              </td>
+              <td><code>{{ service_path }}</code></td>
+              <td class="action-cell">
+                <form action="{{ url_for('rest_admin_create_restful_service') }}" method="post">
+                  <input type="hidden" name="service_name" value="{{ rest_service_form.service_name }}">
+                  <input type="hidden" name="service_path" value="{{ service_path }}">
+                  <button class="icon-action danger-button" type="submit" name="action" value="delete-one" title="Delete {{ service_path }}" aria-label="Delete {{ service_path }}">x</button>
+                </form>
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="3">No REST service paths exist yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </form>
   </section>
   <form class="stack-form" action="{{ url_for('rest_admin_create_restful_service') }}" method="post">
     <div class="form-grid">
