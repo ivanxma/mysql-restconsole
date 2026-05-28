@@ -1,18 +1,27 @@
 import unittest
 from unittest.mock import patch
 
-from modules.mysql_service import _requires_mysqlsh, list_rest_service_paths
+from modules.mysql_service import (
+    _requires_mrs_sql_extensions,
+    create_rest_procedure_definition,
+    create_rest_service_definition,
+    create_rest_service_path_definition,
+    expose_database_to_service_definition,
+    expose_existing_schema_procedure,
+    list_rest_service_paths,
+    run_admin_ddl,
+)
 
 
 class MysqlServiceTests(unittest.TestCase):
-    def test_requires_mysqlsh_for_rest_commands(self) -> None:
-        self.assertTrue(_requires_mysqlsh("SHOW REST SERVICES"))
-        self.assertTrue(_requires_mysqlsh("SHOW CREATE REST SERVICE /app"))
-        self.assertTrue(_requires_mysqlsh("CREATE OR REPLACE REST SERVICE /app PUBLISHED"))
-        self.assertTrue(_requires_mysqlsh('ALTER REST SERVICE /app ADD AUTH APP "MySQL"'))
-        self.assertTrue(_requires_mysqlsh("DROP REST SERVICE /app"))
+    def test_requires_mrs_sql_extensions_for_rest_commands(self) -> None:
+        self.assertTrue(_requires_mrs_sql_extensions("SHOW REST SERVICES"))
+        self.assertTrue(_requires_mrs_sql_extensions("SHOW CREATE REST SERVICE /app"))
+        self.assertTrue(_requires_mrs_sql_extensions("CREATE OR REPLACE REST SERVICE /app PUBLISHED"))
+        self.assertTrue(_requires_mrs_sql_extensions('ALTER REST SERVICE /app ADD AUTH APP "MySQL"'))
+        self.assertTrue(_requires_mrs_sql_extensions("DROP REST SERVICE /app"))
 
-    def test_requires_mysqlsh_for_mixed_rest_script(self) -> None:
+    def test_requires_mrs_sql_extensions_for_mixed_rest_script(self) -> None:
         script = """
         CREATE DATABASE IF NOT EXISTS restapidb;
         CREATE OR REPLACE REST SCHEMA /restapidb ON SERVICE /app
@@ -20,16 +29,16 @@ class MysqlServiceTests(unittest.TestCase):
             ENABLED
             AUTHENTICATION REQUIRED;
         """
-        self.assertTrue(_requires_mysqlsh(script))
+        self.assertTrue(_requires_mrs_sql_extensions(script))
 
     def test_connector_can_handle_normal_sql(self) -> None:
-        self.assertFalse(_requires_mysqlsh("SHOW DATABASES"))
-        self.assertFalse(_requires_mysqlsh("SHOW CREATE VIEW `restapidb`.`employees`"))
-        self.assertFalse(_requires_mysqlsh("SELECT 'SHOW REST SERVICES' AS example"))
+        self.assertFalse(_requires_mrs_sql_extensions("SHOW DATABASES"))
+        self.assertFalse(_requires_mrs_sql_extensions("SHOW CREATE VIEW `restapidb`.`employees`"))
+        self.assertFalse(_requires_mrs_sql_extensions("SELECT 'SHOW REST SERVICES' AS example"))
 
     def test_leading_comments_do_not_hide_rest_command(self) -> None:
-        self.assertTrue(_requires_mysqlsh("-- generated\nSHOW REST SERVICES"))
-        self.assertTrue(_requires_mysqlsh("/* generated */\nCREATE REST SERVICE /app"))
+        self.assertTrue(_requires_mrs_sql_extensions("-- generated\nSHOW REST SERVICES"))
+        self.assertTrue(_requires_mrs_sql_extensions("/* generated */\nCREATE REST SERVICE /app"))
 
     def test_rest_service_paths_use_metadata_sql(self) -> None:
         captured_sql = []
@@ -46,6 +55,55 @@ class MysqlServiceTests(unittest.TestCase):
         self.assertEqual(len(captured_sql), 1)
         self.assertIn("mysql_rest_service_metadata.service", captured_sql[0])
         self.assertNotIn("SHOW REST", captured_sql[0].upper())
+
+    def test_rest_ddl_is_rejected_without_subprocess(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "MRS DDL actions are not available"):
+            run_admin_ddl("CREATE OR REPLACE REST SERVICE /london PUBLISHED")
+
+    def test_create_rest_service_action_is_rejected_without_subprocess(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "MRS DDL actions are not available"):
+            create_rest_service_path_definition(service_name="London")
+
+    def test_expose_database_action_is_rejected_without_subprocess(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "MRS DDL actions are not available"):
+            expose_database_to_service_definition(
+                service_path="/london",
+                source_schema="employees",
+                auth_required=False,
+            )
+
+    def test_expose_table_action_is_rejected_without_subprocess(self) -> None:
+        with patch(
+            "modules.mysql_service.list_table_columns",
+            return_value=[{"column_name": "id", "column_key": "PRI"}],
+        ), self.assertRaisesRegex(RuntimeError, "MRS DDL actions are not available"):
+            create_rest_service_definition(
+                service_path="/london",
+                source_schema="employees",
+                source_table="departments",
+                auth_required=False,
+            )
+
+    def test_create_rest_procedure_action_is_rejected_without_subprocess(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "MRS DDL actions are not available"):
+            create_rest_procedure_definition(
+                procedure_name="department_lookup",
+                service_path="/london",
+                auth_required=False,
+                parameters=[],
+                body_sql="SELECT 1",
+            )
+
+    def test_expose_sys_procedure_action_is_rejected_without_subprocess(self) -> None:
+        with patch("modules.mysql_service.list_procedure_parameters", return_value=[]), self.assertRaisesRegex(
+            RuntimeError, "MRS DDL actions are not available"
+        ):
+            expose_existing_schema_procedure(
+                source_schema="sys",
+                procedure_name="ps_setup_enable_thread",
+                service_path="/london",
+                auth_required=False,
+            )
 
 
 if __name__ == "__main__":

@@ -36,7 +36,6 @@ Useful environment variables:
 
 ```bash
 export MRS_WEBAPP_SECRET_KEY='replace-me'
-export MRS_WEBAPP_MYSQLSH=/path/to/mysqlsh
 export MRS_WEBAPP_PORT=443
 export LOCAL_MYSQL_ADMIN_PASSWORD='temporary-password-for-first-setup'
 # Optional: required when setup must download an embedded MySQL Server tarball.

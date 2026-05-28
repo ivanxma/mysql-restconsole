@@ -28,7 +28,6 @@ from modules.mysql_service import (
     non_system_users,
     run_admin_ddl,
     run_admin_sql,
-    run_mysqlsh,
     special_privilege_categories,
     start_shared_tunnels,
     stop_all_shared_tunnels,

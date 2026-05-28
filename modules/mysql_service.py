@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import json
 import re
 import socket
 import subprocess
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
 
 import mysql.connector
 
@@ -51,20 +49,6 @@ def ensure_login_tunnels() -> None:
         raise RuntimeError(
             f"REST tunnel is not reachable on {runtime_config.api_host}:{runtime_config.api_port}. Establish the local REST tunnel first."
         ) from exc
-
-
-def mysqlsh_uri(username: str, password: str) -> str:
-    from flask import has_request_context, session
-    if has_request_context():
-        profile = session.get("connection_profile", {})
-        if profile.get("mode") == "socket":
-            socket_path = str(profile.get("socket", "")).strip()
-            if not socket_path.startswith("/"):
-                socket_path = str((Path(__file__).resolve().parent.parent / socket_path).resolve())
-            return f"mysql://{quote(username)}:{quote(password)}@localhost?socket={quote(socket_path, safe='')}"
-
-    runtime_config = get_runtime_config()
-    return f"mysql://{quote(username)}:{quote(password)}@{runtime_config.host}:{runtime_config.port}"
 
 
 def _connector_kwargs(username: str, password: str) -> dict[str, Any]:
@@ -186,76 +170,12 @@ def _strip_leading_sql_comments(statement: str) -> str:
     return remaining
 
 
-def _requires_mysqlsh(sql: str) -> bool:
+def _requires_mrs_sql_extensions(sql: str) -> bool:
     for statement in _split_sql_statements(sql):
         cleaned = _strip_leading_sql_comments(statement)
         if any(pattern.match(cleaned) for pattern in _MYSQLSH_REST_PATTERNS):
             return True
     return False
-
-
-def _run_mysqlsh_subprocess(
-    sql: str,
-    *,
-    username: str,
-    password: str,
-    raw_output: bool = False,
-) -> list[dict[str, Any]] | str:
-    cmd = [
-        CONFIG.mysqlsh_path,
-        "--sql",
-        mysqlsh_uri(username, password),
-        "--execute",
-        sql,
-    ]
-    if not raw_output:
-        cmd.insert(2, "--result-format=json")
-
-    completed = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        timeout=max(get_runtime_config().connect_timeout * 4, 12),
-        check=False,
-    )
-
-    combined_stderr = (completed.stderr or "").strip()
-    stdout = (completed.stdout or "").strip()
-    if completed.returncode != 0:
-        stderr_lines = [
-            line.strip()
-            for line in combined_stderr.splitlines()
-            if line.strip()
-            and not line.strip().startswith("WARNING:")
-            and "Using a password on the command line interface can be insecure." not in line
-        ]
-        stdout_lines = [
-            line.strip()
-            for line in stdout.splitlines()
-            if line.strip()
-            and not line.strip().startswith("WARNING:")
-            and "Using a password on the command line interface can be insecure." not in line
-        ]
-        detail = "\n".join(stderr_lines) or "\n".join(stdout_lines) or "mysqlsh execution failed"
-        raise RuntimeError(detail)
-
-    if raw_output:
-        return stdout
-
-    rows: list[dict[str, Any]] = []
-    buffer: list[str] = []
-    depth = 0
-    for line in stdout.splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("WARNING:") or stripped.startswith("Using a password"):
-            continue
-        depth += stripped.count("{")
-        depth -= stripped.count("}")
-        buffer.append(stripped)
-        if depth == 0 and buffer:
-            rows.append(json.loads(" ".join(buffer)))
-            buffer = []
-    return rows
 
 
 def _manage_tunnel(action: str, runtime_config) -> None:
@@ -316,15 +236,19 @@ def start_shared_tunnels() -> None:
     _manage_tunnel("start", runtime_config)
 
 
-def run_mysqlsh(
+def run_profile_sql(
     sql: str,
     *,
     username: str,
     password: str,
     raw_output: bool = False,
 ) -> list[dict[str, Any]] | str:
-    if _requires_mysqlsh(sql):
-        return _run_mysqlsh_subprocess(sql, username=username, password=password, raw_output=raw_output)
+    if _requires_mrs_sql_extensions(sql):
+        raise RuntimeError(
+            "MRS DDL actions are not available from this deployment. "
+            "The application can read and test existing MySQL REST Service metadata through the active profile, "
+            "but creating or changing REST services requires the MySQL REST Service SQL extensions."
+        )
 
     try:
         return _run_connector_sql(sql, username=username, password=password, raw_output=raw_output)
@@ -339,8 +263,8 @@ def run_admin_sql(sql: str, *, raw_output: bool = False) -> list[dict[str, Any]]
         password = get_profile_password(str(session.get("profile_credential_token", "")))
         if not password:
             raise RuntimeError("Profile DB session expired. Log in to the profile again.")
-        return run_mysqlsh(sql, username=str(session["db_username"]), password=password, raw_output=raw_output)
-    return run_mysqlsh(sql, username=CONFIG.admin_username, password=CONFIG.admin_password, raw_output=raw_output)
+        return run_profile_sql(sql, username=str(session["db_username"]), password=password, raw_output=raw_output)
+    return run_profile_sql(sql, username=CONFIG.admin_username, password=CONFIG.admin_password, raw_output=raw_output)
 
 
 def run_admin_ddl(sql: str) -> None:
@@ -348,7 +272,7 @@ def run_admin_ddl(sql: str) -> None:
 
 
 def fetch_grants(username: str, password: str) -> list[str]:
-    output = run_mysqlsh("SHOW GRANTS", username=username, password=password, raw_output=True)
+    output = run_profile_sql("SHOW GRANTS", username=username, password=password, raw_output=True)
     rows = []
     for line in str(output).splitlines():
         cleaned = line.strip()
