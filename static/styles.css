@@ -231,9 +231,10 @@ body {
 }
 
 .main-panel {
-  padding: 28px;
+  width: 100%;
+  padding: clamp(16px, 2vw, 28px);
   min-width: 0;
-  max-width: 1440px;
+  max-width: none;
   margin: 0 auto;
 }
 
@@ -709,9 +710,9 @@ body {
 
 .hero-metrics {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 14px;
-  min-width: 340px;
+  min-width: 0;
 }
 
 .metric-card strong {
@@ -720,7 +721,7 @@ body {
 
 .content-grid {
   display: grid;
-  grid-template-columns: 1.2fr 0.8fr;
+  grid-template-columns: minmax(0, 1.2fr) minmax(300px, 0.8fr);
   gap: 22px;
 }
 
@@ -918,17 +919,17 @@ body {
 
 .form-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 16px;
 }
 
 .form-grid-wide {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
 .preview-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 16px;
 }
 
@@ -961,7 +962,7 @@ body {
 
 .profile-editor-grid {
   display: grid;
-  grid-template-columns: minmax(220px, 0.32fr) minmax(0, 1fr);
+  grid-template-columns: minmax(220px, 0.28fr) minmax(360px, 1fr);
   gap: 18px;
   align-items: start;
 }
@@ -1179,7 +1180,7 @@ body {
 
 .object-columns {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 18px;
 }
 
