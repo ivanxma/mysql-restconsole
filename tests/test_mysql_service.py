@@ -77,7 +77,11 @@ class MysqlServiceTests(unittest.TestCase):
     def test_expose_table_action_uses_mrs_extensions(self) -> None:
         with patch(
             "modules.mysql_service.list_table_columns",
-            return_value=[{"column_name": "id", "column_key": "PRI"}],
+            return_value=[
+                {"column_name": "employee_id", "column_key": "PRI"},
+                {"column_name": "zip", "column_key": ""},
+                {"column_name": "password", "column_key": ""},
+            ],
         ), patch("modules.mysql_service._run_mrs_sql_extensions", return_value="") as runner:
             create_rest_service_definition(
                 service_path="/london",
@@ -86,6 +90,9 @@ class MysqlServiceTests(unittest.TestCase):
                 auth_required=False,
             )
         self.assertIn("CREATE OR REPLACE REST VIEW", runner.call_args.args[0])
+        self.assertIn("`employee_id`: `employee_id` @SORTABLE", runner.call_args.args[0])
+        self.assertIn("`zip`: `zip`", runner.call_args.args[0])
+        self.assertIn("`password`: `password`", runner.call_args.args[0])
 
     def test_create_rest_procedure_action_uses_mrs_extensions(self) -> None:
         with patch("modules.mysql_service._run_mrs_sql_extensions", return_value="") as runner:

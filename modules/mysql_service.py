@@ -814,7 +814,7 @@ def fallback_user_role(username: str, password: str) -> str | None:
 
 
 def _quote_identifier(name: str) -> str:
-    return f"`{name}`"
+    return f"`{name.replace('`', '``')}`"
 
 
 def _require_identifier(value: str, label: str) -> str:
@@ -971,7 +971,8 @@ def build_rest_service_definition(
     for column in columns:
         column_name = column["column_name"]
         sortable = " @SORTABLE" if column["column_key"] == "PRI" else ""
-        field_lines.append(f"    {column_name}: {column_name}{sortable}")
+        quoted_column_name = _quote_identifier(column_name)
+        field_lines.append(f"    {quoted_column_name}: {quoted_column_name}{sortable}")
     field_mapping = ",\n".join(field_lines)
 
     statements = [
