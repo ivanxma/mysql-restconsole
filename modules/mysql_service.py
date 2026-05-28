@@ -968,18 +968,22 @@ def build_rest_service_definition(
     auth_mode = "REQUIRED" if auth_required else "NOT REQUIRED"
 
     field_lines: list[str] = []
+    select_columns: list[str] = []
     for column in columns:
         column_name = column["column_name"]
         sortable = " @SORTABLE" if column["column_key"] == "PRI" else ""
         quoted_column_name = _quote_identifier(column_name)
+        select_columns.append(quoted_column_name)
         field_lines.append(f"    {quoted_column_name}: {quoted_column_name}{sortable}")
     field_mapping = ",\n".join(field_lines)
+    view_select_list = ",\n    ".join(select_columns)
 
     statements = [
         f"CREATE DATABASE IF NOT EXISTS {_quote_identifier(schema_name)}",
         (
             f"CREATE OR REPLACE SQL SECURITY DEFINER VIEW {_quote_identifier(schema_name)}.{_quote_identifier(view_name)} AS\n"
-            f"SELECT *\nFROM {_quote_identifier(source_schema_name)}.{_quote_identifier(source_table_name)}"
+            f"SELECT\n    {view_select_list}\n"
+            f"FROM {_quote_identifier(source_schema_name)}.{_quote_identifier(source_table_name)}"
         ),
     ]
 

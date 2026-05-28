@@ -94,6 +94,27 @@ class MysqlServiceTests(unittest.TestCase):
         self.assertIn("`zip`: `zip`", runner.call_args.args[0])
         self.assertIn("`password`: `password`", runner.call_args.args[0])
 
+    def test_expose_table_view_selects_columns_explicitly_for_invisible_columns(self) -> None:
+        with patch(
+            "modules.mysql_service.list_table_columns",
+            return_value=[
+                {"column_name": "id", "column_key": "PRI"},
+                {"column_name": "name", "column_key": ""},
+                {"column_name": "my_row_id", "column_key": ""},
+            ],
+        ), patch("modules.mysql_service._run_mrs_sql_extensions", return_value="") as runner:
+            create_rest_service_definition(
+                service_path="/airline_rs",
+                source_schema="irisdb",
+                source_table="iris_train",
+                auth_required=False,
+            )
+
+        generated_sql = runner.call_args.args[0]
+        self.assertNotIn("SELECT *", generated_sql)
+        self.assertIn("SELECT\n    `id`,\n    `name`,\n    `my_row_id`", generated_sql)
+        self.assertIn("`my_row_id`: `my_row_id`", generated_sql)
+
     def test_create_rest_procedure_action_uses_mrs_extensions(self) -> None:
         with patch("modules.mysql_service._run_mrs_sql_extensions", return_value="") as runner:
             create_rest_procedure_definition(

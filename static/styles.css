@@ -1169,6 +1169,7 @@ body {
 
 .table-wrap {
   overflow-x: auto;
+  max-width: 100%;
   border-radius: 8px;
   border: 1px solid rgba(127, 29, 29, 0.1);
   background: rgba(255, 255, 255, 0.86);
@@ -1176,18 +1177,19 @@ body {
 
 .data-table {
   width: 100%;
+  min-width: max(100%, 960px);
   border-collapse: collapse;
   background: transparent;
-}
-
-.enhanced-data-table {
   table-layout: fixed;
 }
 
 .data-table th,
 .data-table td {
+  max-width: 320px;
+  overflow: hidden;
   padding: 12px 14px;
   text-align: left;
+  text-overflow: ellipsis;
   border-bottom: 1px solid rgba(127, 29, 29, 0.08);
   vertical-align: middle;
   white-space: nowrap;
@@ -1338,7 +1340,7 @@ body {
 }
 
 .data-table td:last-child {
-  white-space: normal;
+  white-space: nowrap;
 }
 
 .table-badge {
@@ -1663,7 +1665,8 @@ body {
 .field-value-button {
   appearance: none;
   display: block;
-  max-width: min(420px, 44vw);
+  width: 100%;
+  max-width: 100%;
   overflow: hidden;
   padding: 0;
   border: 0;
