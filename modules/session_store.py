@@ -53,16 +53,21 @@ def current_user() -> dict[str, Any] | None:
     if "username" not in session:
         return None
     role = session["role"]
+    menu = role_menu(role)
+    if role == "admin" and not session.get("connection_profile"):
+        menu = [item for item in menu if item.get("label") != "RestAPI"]
     return {
         "username": session["username"],
         "role": role,
         "role_label": ROLE_LABELS.get(role, role),
-        "menu": role_menu(role),
+        "menu": menu,
     }
 
 
 def slug_allowed(role: str, slug: str) -> bool:
-    return any(item.get("slug") == slug for item in _menu_items(role_menu(role)))
+    user = current_user()
+    menu = user["menu"] if user else role_menu(role)
+    return any(item.get("slug") == slug for item in _menu_items(menu))
 
 
 def infer_initials(username: str) -> str:
