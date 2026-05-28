@@ -24,6 +24,21 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
+def _is_stale_running_state(status: dict[str, Any]) -> bool:
+    if status.get("state") not in {"starting", "running", "restarting"}:
+        return False
+    raw_updated_at = str(status.get("updated_at") or "")
+    if not raw_updated_at:
+        return False
+    try:
+        updated_at = datetime.fromisoformat(raw_updated_at.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if updated_at.tzinfo is None:
+        updated_at = updated_at.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - updated_at).total_seconds() > 900
+
+
 def _chmod_private(path: Path) -> None:
     try:
         path.chmod(0o600)
@@ -56,8 +71,11 @@ def read_update_status(include_token: bool = False) -> dict[str, Any]:
             "finished_at": "",
             "service_names": [],
         }
+    stale_running_state = _is_stale_running_state(status)
+    if stale_running_state:
+        status["message"] = f"Previous update status was stale at {status.get('state')}; a new update can be started."
     status["log_text"] = log_text
-    status["can_start"] = status.get("state") not in {"starting", "running", "restarting"}
+    status["can_start"] = stale_running_state or status.get("state") not in {"starting", "running", "restarting"}
     if not include_token:
         status.pop("poll_token", None)
     return status

@@ -7,7 +7,9 @@ import os
 import platform
 import shlex
 import shutil
+import signal
 import subprocess
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -179,13 +181,70 @@ class Worker:
         if not services or not shutil.which("systemctl"):
             self.log("No active systemd service detected; restart skipped.")
             return
-        self.write_status(state="restarting", step="restart", message="Restarting active services.", service_names=services)
-        for service in services:
-            self.run(["sudo", "systemctl", "restart", service])
+        self.log("Scheduling active service restart outside the web service cgroup.")
+        if shutil.which("sudo") and shutil.which("systemd-run"):
+            unit_name = f"{APP_SLUG}-update-restart-{int(time.time())}"
+            command = [
+                "sudo",
+                "-n",
+                "systemd-run",
+                f"--unit={unit_name}",
+                "--collect",
+                "--on-active=2",
+                "/bin/systemctl",
+                "restart",
+                *services,
+            ]
+            result = subprocess.run(
+                command,
+                cwd=str(self.repo_dir),
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                timeout=20,
+            )
+            self.log("$ " + shlex.join(command))
+            if result.stdout:
+                self.log(result.stdout.rstrip("\n"))
+            if result.returncode == 0:
+                return
+            self.log(f"systemd-run restart scheduling failed with exit code {result.returncode}; trying direct restart.")
+        if shutil.which("sudo"):
+            command = ["sudo", "-n", "systemctl", "restart", *services]
+            self.log("$ " + shlex.join(command))
+            subprocess.Popen(
+                command,
+                cwd=str(self.repo_dir),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+            return
+        self.log("sudo is not available; service restart skipped.")
+
+    def stop_stale_update_workers(self) -> None:
+        current_pid = os.getpid()
+        try:
+            output = self.capture(["pgrep", "-f", "mysql_rest_console_update_worker.py"])
+        except Exception:
+            return
+        for raw_pid in output.splitlines():
+            try:
+                pid = int(raw_pid.strip())
+            except ValueError:
+                continue
+            if pid == current_pid:
+                continue
+            try:
+                os.kill(pid, signal.SIGTERM)
+                self.log(f"Stopped stale update worker process {pid}.")
+            except OSError:
+                pass
 
     def main(self) -> None:
         try:
             self.write_status(state="running", step="start", message="Starting update worker.")
+            self.stop_stale_update_workers()
             runtime_env = self.runtime_env()
             os_family = self.detect_os_family(runtime_env)
             services = self.active_services()
@@ -202,8 +261,17 @@ class Worker:
             env.update(runtime_env)
             env.setdefault("SKIP_PRIVILEGED_SETUP", "1")
             self.run(["./setup.sh", os_family, "none"], env=env)
+            if services:
+                self.write_status(
+                    state="completed",
+                    step="restart",
+                    message="Update completed. Restarting active services.",
+                    service_names=services,
+                    finished_at=utc_now(),
+                )
+            else:
+                self.write_status(state="completed", step="done", message="Update completed.", finished_at=utc_now())
             self.restart_services(services)
-            self.write_status(state="completed", step="done", message="Update completed.", finished_at=utc_now())
         except Exception as exc:
             self.log(f"ERROR: {exc}")
             self.write_status(state="error", step="failed", message=str(exc), finished_at=utc_now())
