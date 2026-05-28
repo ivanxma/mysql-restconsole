@@ -10,28 +10,56 @@ ROLE_LABELS = {
 
 ROLE_MENUS = {
     "admin": [
-        {"slug": "local-users", "label": "User Management"},
-        {"slug": "local-groups", "label": "Group Management"},
-        {"slug": "config", "label": "Profiles"},
-        {"slug": "profile-login", "label": "Profile Login"},
-        {"slug": "update", "label": "Update"},
-        {"slug": "show-grants", "label": "Show Grants"},
+        {
+            "label": "Admin",
+            "children": [
+                {"slug": "local-users", "label": "User Management"},
+                {"slug": "local-groups", "label": "Group Management"},
+                {"slug": "config", "label": "Profiles"},
+                {"slug": "profile-login", "label": "Profile Login"},
+                {"slug": "update", "label": "Update"},
+                {"slug": "show-grants", "label": "Show Grants"},
+            ],
+        },
+        {
+            "label": "RestAPI",
+            "children": [
+                {"slug": "user", "label": "User"},
+                {"slug": "granting-privileges", "label": "Granting Privileges"},
+                {"slug": "restapidb", "label": "RestAPIDB"},
+                {"slug": "list-restful-services", "label": "List Restful Services"},
+                {"slug": "create-restful-service", "label": "Create Restful Service"},
+                {"slug": "expose-db-as-service", "label": "Expose DB as Service"},
+                {"slug": "expose-table-as-service", "label": "Expose Table as Service"},
+                {"slug": "expose-sp-as-service", "label": "Expose SP as Service"},
+            ],
+        },
     ],
     "local_user": [
         {"slug": "profile-login", "label": "Profile Login"},
         {"slug": "show-grants", "label": "Show Grants"},
     ],
     "rest_admin": [
-        {"slug": "list-restful-services", "label": "List Restful Services"},
-        {"slug": "create-restful-service", "label": "Create Restful Service"},
-        {"slug": "expose-db-as-service", "label": "Expose DB as Service"},
-        {"slug": "expose-table-as-service", "label": "Expose Table as Service"},
-        {"slug": "expose-sp-as-service", "label": "Expose SP as Service"},
-        {"slug": "show-grants", "label": "Show Grants"},
+        {
+            "label": "RestAPI",
+            "children": [
+                {"slug": "list-restful-services", "label": "List Restful Services"},
+                {"slug": "create-restful-service", "label": "Create Restful Service"},
+                {"slug": "expose-db-as-service", "label": "Expose DB as Service"},
+                {"slug": "expose-table-as-service", "label": "Expose Table as Service"},
+                {"slug": "expose-sp-as-service", "label": "Expose SP as Service"},
+                {"slug": "show-grants", "label": "Show Grants"},
+            ],
+        },
     ],
     "test_user": [
-        {"slug": "list-restful-services", "label": "List Restful Services"},
-        {"slug": "show-grants", "label": "Show Grants"},
+        {
+            "label": "RestAPI",
+            "children": [
+                {"slug": "list-restful-services", "label": "List Restful Services"},
+                {"slug": "show-grants", "label": "Show Grants"},
+            ],
+        },
     ],
 }
 

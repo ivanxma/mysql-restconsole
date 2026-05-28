@@ -27,7 +27,18 @@
       </header>
       <nav class="menu">
         {% for item in current_menu %}
+        {% if item.children is defined %}
+        <div class="menu-group {% if item.children | selectattr('slug', 'equalto', active_slug) | list %}is-active{% endif %}">
+          <span class="menu-group-label">{{ item.label }}</span>
+          <div class="menu-group-links">
+            {% for child in item.children %}
+            <a class="menu-link {% if active_slug == child.slug %}is-active{% endif %}" href="{{ url_for('dashboard', slug=child.slug) }}">{{ child.label }}</a>
+            {% endfor %}
+          </div>
+        </div>
+        {% else %}
         <a class="menu-link {% if active_slug == item.slug %}is-active{% endif %}" href="{{ url_for('dashboard', slug=item.slug) }}">{{ item.label }}</a>
+        {% endif %}
         {% endfor %}
       </nav>
       {% endif %}

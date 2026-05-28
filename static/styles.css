@@ -100,8 +100,38 @@ body {
   display: flex;
   flex-direction: row;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 12px;
   margin-bottom: 20px;
+  align-items: flex-start;
+}
+
+.menu-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: min(100%, 240px);
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.42);
+}
+
+.menu-group.is-active {
+  background: rgba(255, 253, 248, 0.86);
+}
+
+.menu-group-label {
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.menu-group-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .menu-link {

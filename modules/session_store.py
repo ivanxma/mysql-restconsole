@@ -12,6 +12,17 @@ def role_menu(role: str) -> list[dict[str, str]]:
     return ROLE_MENUS.get(role, [])
 
 
+def _menu_items(menu: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for entry in menu:
+        children = entry.get("children")
+        if isinstance(children, list):
+            items.extend(child for child in children if isinstance(child, dict))
+        else:
+            items.append(entry)
+    return items
+
+
 def admin_subtabs(slug: str) -> list[dict[str, str]]:
     if slug == "user":
         return USER_TABS
@@ -34,7 +45,7 @@ def role_home(role: str) -> str:
         return "local-users"
     if role == "local_user":
         return "profile-login"
-    menu = role_menu(role)
+    menu = _menu_items(role_menu(role))
     return menu[0]["slug"] if menu else ""
 
 
@@ -51,7 +62,7 @@ def current_user() -> dict[str, Any] | None:
 
 
 def slug_allowed(role: str, slug: str) -> bool:
-    return any(item["slug"] == slug for item in role_menu(role))
+    return any(item.get("slug") == slug for item in _menu_items(role_menu(role)))
 
 
 def infer_initials(username: str) -> str:

@@ -70,6 +70,19 @@ def _can_access_rest_service_console(user: dict[str, Any] | None) -> bool:
     return bool(user and user["role"] in {"admin", "rest_admin", "test_user"})
 
 
+def _can_manage_rest_api(user: dict[str, Any] | None) -> bool:
+    return bool(user and user["role"] in {"admin", "rest_admin"})
+
+
+REST_API_PAGE_SLUGS = {
+    "list-restful-services",
+    "create-restful-service",
+    "expose-db-as-service",
+    "expose-table-as-service",
+    "expose-sp-as-service",
+}
+
+
 def _parse_int_field(raw_value: str, *, label: str) -> int:
     try:
         value = int(str(raw_value).strip())
@@ -753,7 +766,7 @@ def register_routes(app: Flask) -> None:
     @app.post("/rest-admin/services/create")
     def rest_admin_create_restful_service():
         user = current_user()
-        if not user or user["role"] != "rest_admin":
+        if not _can_manage_rest_api(user):
             return redirect(url_for("login"))
 
         service_name = request.form.get("service_name", "").strip()
@@ -791,7 +804,7 @@ def register_routes(app: Flask) -> None:
     @app.post("/rest-admin/schemas/create")
     def rest_admin_expose_database_service():
         user = current_user()
-        if not user or user["role"] != "rest_admin":
+        if not _can_manage_rest_api(user):
             return redirect(url_for("login"))
 
         service_path = request.form.get("service_path", "").strip()
@@ -837,7 +850,7 @@ def register_routes(app: Flask) -> None:
     @app.post("/rest-admin/tables/create")
     def rest_admin_expose_table_service():
         user = current_user()
-        if not user or user["role"] != "rest_admin":
+        if not _can_manage_rest_api(user):
             return redirect(url_for("login"))
 
         service_path = request.form.get("service_path", "").strip()
@@ -887,7 +900,7 @@ def register_routes(app: Flask) -> None:
     @app.post("/rest-admin/procedures/create")
     def rest_admin_create_rest_procedure():
         user = current_user()
-        if not user or user["role"] != "rest_admin":
+        if not _can_manage_rest_api(user):
             return redirect(url_for("login"))
 
         procedure_name = request.form.get("procedure_name", "").strip()
@@ -954,7 +967,7 @@ def register_routes(app: Flask) -> None:
     @app.post("/rest-admin/procedures/expose-sys")
     def rest_admin_expose_sys_procedure():
         user = current_user()
-        if not user or user["role"] != "rest_admin":
+        if not _can_manage_rest_api(user):
             return redirect(url_for("login"))
 
         service_path = request.form.get("service_path", "").strip()
@@ -1208,7 +1221,7 @@ def register_routes(app: Flask) -> None:
                     return login_redirect_response(f"Session failed while loading RestAPIDB: {exc}")
                 return login_redirect_response(f"Session failed while loading page: {exc}")
 
-        if user["role"] == "rest_admin":
+        if user["role"] in {"admin", "rest_admin"} and slug in REST_API_PAGE_SLUGS:
             try:
                 context.update(_dashboard_context_for_rest_admin(slug))
             except Exception as exc:
@@ -1218,7 +1231,7 @@ def register_routes(app: Flask) -> None:
                     context=context,
                 )
 
-        if user["role"] in {"rest_admin", "test_user"} and slug == "list-restful-services":
+        if user["role"] in {"admin", "rest_admin", "test_user"} and slug == "list-restful-services":
             context["subtabs"] = []
             try:
                 context["rest_services"] = list_restapidb_services()
