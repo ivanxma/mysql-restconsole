@@ -20,11 +20,12 @@
         </div>
         <details class="account-menu">
           <summary class="account-trigger" aria-label="Open user menu">
-            <span class="avatar">{{ initials }}</span>
+            <span class="avatar avatar-user" aria-hidden="true"></span>
+            <span class="sr-only">Open user menu</span>
           </summary>
           <div class="account-popover">
             <div class="account-head">
-              <span class="avatar avatar-small">{{ initials }}</span>
+              <span class="avatar avatar-small avatar-user" aria-hidden="true"></span>
               <div>
                 <strong>{{ current_user.username }}</strong>
                 <span>{{ current_role_label }}</span>

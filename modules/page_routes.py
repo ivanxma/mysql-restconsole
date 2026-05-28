@@ -1117,10 +1117,14 @@ def register_routes(app: Flask) -> None:
             flash("That profile is not assigned to your user or group.", "error")
             return redirect(url_for("dashboard", slug="profile-login"))
         previous_state = {
+            "username": session.get("username"),
+            "initials": session.get("initials"),
             "connection_profile": session.get("connection_profile"),
             "db_username": session.get("db_username"),
             "db_role": session.get("db_role"),
             "role": session.get("role"),
+            "local_role": session.get("local_role"),
+            "local_login_complete": session.get("local_login_complete"),
             "grants": session.get("grants"),
             "profile_credential_token": session.get("profile_credential_token"),
         }
@@ -1139,10 +1143,11 @@ def register_routes(app: Flask) -> None:
             session["db_role"] = db_role
             clear_profile_password(str(session.get("profile_credential_token", "")))
             session["profile_credential_token"] = store_profile_password(password)
-            if session.get("local_role") == "admin":
-                session["role"] = "admin"
-            else:
-                session["role"] = "db_admin" if db_role == "admin" else db_role
+            session["username"] = username
+            session["initials"] = infer_initials(username)
+            session["role"] = "db_admin" if db_role == "admin" else db_role
+            session.pop("local_role", None)
+            session.pop("local_login_complete", None)
             session["grants"] = grants
             flash(f"Connected to profile {login_profile['label']}.", "info")
             return redirect(url_for("dashboard", slug=role_home(session["role"])))
@@ -1256,6 +1261,17 @@ def register_routes(app: Flask) -> None:
             "local_groups": [],
             "user_group_memberships": [],
             "profile_assignments": [],
+            "hide_hero_panel": slug in {
+                "user",
+                "granting-privileges",
+                "restapidb",
+                "list-restful-services",
+                "create-restful-service",
+                "expose-db-as-service",
+                "expose-table-as-service",
+                "expose-sp-as-service",
+            }
+            or (slug == "show-grants" and bool(session.get("connection_profile"))),
         }
 
         if user["role"] == "admin":
