@@ -19,6 +19,7 @@ from modules.local_auth import (
     list_local_users,
     list_profile_assignments,
     list_user_group_memberships,
+    remove_profile_assignment,
 )
 from modules.profile_store import (
     LOCAL_ADMIN_PROFILE_NAME,
@@ -28,6 +29,7 @@ from modules.profile_store import (
     rename_profile_assignments,
     update_profile,
 )
+from modules.profile_session_store import clear_profile_password, store_profile_password
 from modules.update_service import poll_token_matches, read_update_status, start_update_job
 from modules.services import (
     classify_role,
@@ -571,6 +573,27 @@ def register_routes(app: Flask) -> None:
                 flash(f"Profile assignment failed: {exc}", "error")
         return redirect(url_for("dashboard", slug="config"))
 
+    @app.post("/admin/profile-assignments/delete")
+    def admin_remove_profile_assignment():
+        user = current_user()
+        if not user or user["role"] != "admin":
+            return redirect(url_for("login"))
+        raw_profile_name = request.form.get("profile_name", "").strip()
+        subject_type = request.form.get("subject_type", "").strip()
+        subject_name = request.form.get("subject_name", "").strip()
+        if not raw_profile_name or not subject_type or not subject_name:
+            flash("Profile assignment removal requires profile, target type, and target name.", "error")
+        else:
+            try:
+                profile_name = _parse_profile_name(raw_profile_name)
+                if remove_profile_assignment(profile_name, subject_type, subject_name):
+                    flash(f"Removed {profile_name} from {subject_type} {subject_name}.", "info")
+                else:
+                    flash("Profile assignment was not found.", "error")
+            except Exception as exc:
+                flash(f"Profile assignment removal failed: {exc}", "error")
+        return redirect(url_for("dashboard", slug="config"))
+
     @app.post("/admin/update/start")
     def admin_start_update():
         user = current_user()
@@ -1093,9 +1116,17 @@ def register_routes(app: Flask) -> None:
         if user["role"] != "admin" and profile_name not in assigned_profile_names(user["username"]):
             flash("That profile is not assigned to your user or group.", "error")
             return redirect(url_for("dashboard", slug="profile-login"))
+        previous_state = {
+            "connection_profile": session.get("connection_profile"),
+            "db_username": session.get("db_username"),
+            "db_role": session.get("db_role"),
+            "role": session.get("role"),
+            "grants": session.get("grants"),
+            "profile_credential_token": session.get("profile_credential_token"),
+        }
         try:
             login_profile = _build_login_profile({"profile_name": profile_name})
-            previous_profile = session.get("connection_profile")
+            previous_profile = previous_state["connection_profile"]
             if previous_profile and previous_profile != login_profile:
                 stop_all_shared_tunnels()
             session["connection_profile"] = login_profile
@@ -1106,6 +1137,8 @@ def register_routes(app: Flask) -> None:
             db_role = classify_role(username, grants)
             session["db_username"] = username
             session["db_role"] = db_role
+            clear_profile_password(str(session.get("profile_credential_token", "")))
+            session["profile_credential_token"] = store_profile_password(password)
             if session.get("local_role") == "admin":
                 session["role"] = "admin"
             else:
@@ -1114,11 +1147,18 @@ def register_routes(app: Flask) -> None:
             flash(f"Connected to profile {login_profile['label']}.", "info")
             return redirect(url_for("dashboard", slug=role_home(session["role"])))
         except Exception as exc:
+            clear_profile_password(str(session.get("profile_credential_token", "")))
+            for key, value in previous_state.items():
+                if value is None:
+                    session.pop(key, None)
+                else:
+                    session[key] = value
             flash(f"Profile login failed: {exc}", "error")
         return redirect(url_for("dashboard", slug="profile-login"))
 
     @app.route("/logout", methods=["POST"])
     def logout():
+        clear_profile_password(str(session.get("profile_credential_token", "")))
         stop_all_shared_tunnels()
         session.clear()
         return redirect(url_for("login"))

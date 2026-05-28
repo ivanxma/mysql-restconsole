@@ -13,6 +13,7 @@ import mysql.connector
 from modules.cache_store import get_cached_value, invalidate_cached_values, set_cached_value
 from modules.catalog import REST_ADMIN_ROLES, SPECIAL_PRIV_CATEGORIES, SPECIAL_ROLE_CATALOG, SYSTEM_USER_PREFIXES, SYSTEM_USERS
 from modules.app_config import CONFIG, get_runtime_config
+from modules.profile_session_store import get_profile_password
 
 
 def is_system_user(username: str) -> bool:
@@ -286,6 +287,13 @@ def run_mysqlsh(
 
 
 def run_admin_sql(sql: str, *, raw_output: bool = False) -> list[dict[str, Any]] | str:
+    from flask import has_request_context, session
+
+    if has_request_context() and session.get("connection_profile") and session.get("db_username"):
+        password = get_profile_password(str(session.get("profile_credential_token", "")))
+        if not password:
+            raise RuntimeError("Profile DB session expired. Log in to the profile again.")
+        return run_mysqlsh(sql, username=str(session["db_username"]), password=password, raw_output=raw_output)
     return run_mysqlsh(sql, username=CONFIG.admin_username, password=CONFIG.admin_password, raw_output=raw_output)
 
 

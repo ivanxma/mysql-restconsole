@@ -294,6 +294,24 @@ def assign_profile(profile_name: str, subject_type: str, subject_name: str) -> N
     connection.close()
 
 
+def remove_profile_assignment(profile_name: str, subject_type: str, subject_name: str) -> bool:
+    if subject_type not in {"user", "group"}:
+        raise RuntimeError("Assignment target must be user or group.")
+    connection = _connection()
+    ensure_schema(connection)
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            DELETE FROM profile_assignments
+            WHERE profile_name = %s AND subject_type = %s AND subject_name = %s
+            """,
+            (profile_name, subject_type, subject_name),
+        )
+        removed = cursor.rowcount > 0
+    connection.close()
+    return removed
+
+
 def list_profile_assignments() -> list[dict[str, Any]]:
     try:
         connection = _connection()

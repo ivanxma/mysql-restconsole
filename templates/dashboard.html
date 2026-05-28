@@ -264,16 +264,24 @@
     </div>
     <div class="table-wrap">
       <table class="data-table">
-        <thead><tr><th>Profile</th><th>Target Type</th><th>Target</th></tr></thead>
+        <thead><tr><th>Profile</th><th>Target Type</th><th>Target</th><th>Action</th></tr></thead>
         <tbody>
           {% for assignment in profile_assignments %}
           <tr>
             <td>{{ assignment.profile_name }}</td>
             <td>{{ assignment.subject_type }}</td>
             <td>{{ assignment.subject_name }}</td>
+            <td>
+              <form action="{{ url_for('admin_remove_profile_assignment') }}" method="post">
+                <input type="hidden" name="profile_name" value="{{ assignment.profile_name }}">
+                <input type="hidden" name="subject_type" value="{{ assignment.subject_type }}">
+                <input type="hidden" name="subject_name" value="{{ assignment.subject_name }}">
+                <button class="ghost-button danger-button" type="submit">Remove</button>
+              </form>
+            </td>
           </tr>
           {% else %}
-          <tr><td colspan="3">No profile assignments have been created.</td></tr>
+          <tr><td colspan="4">No profile assignments have been created.</td></tr>
           {% endfor %}
         </tbody>
       </table>
