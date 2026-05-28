@@ -258,14 +258,21 @@ def resolve_rest_source_details(
     if cached is not None:
         return cached
 
-    show_create_stmt = (
-        f"SHOW CREATE REST VIEW {object_path} FROM SERVICE {service_path} SCHEMA {schema_path};"
-        if object_kind == "VIEW"
-        else f"SHOW CREATE REST PROCEDURE {object_path} FROM SERVICE {service_path} SCHEMA {schema_path};"
+    rows = run_admin_sql(
+        f"""
+        SELECT
+            ds.name AS target_schema,
+            dbo.name AS target_object
+        FROM mysql_rest_service_metadata.service s
+        JOIN mysql_rest_service_metadata.db_schema ds ON ds.service_id = s.id
+        JOIN mysql_rest_service_metadata.db_object dbo ON dbo.db_schema_id = ds.id
+        WHERE s.url_context_root = {_quote_sql_string(service_path)}
+          AND ds.request_path = {_quote_sql_string(schema_path)}
+          AND dbo.request_path = {_quote_sql_string(object_path)}
+        LIMIT 1
+        """
     )
-    rest_create_output = str(run_admin_sql(show_create_stmt, raw_output=True))
-    target = _parse_rest_target(rest_create_output)
-    if target is None:
+    if not rows:
         source_schema = schema_path.lstrip("/") or "-"
         source_object = object_path.lstrip("/") or "-"
         return set_cached_value(
@@ -277,7 +284,8 @@ def resolve_rest_source_details(
             },
         )
 
-    target_schema, target_object = target
+    target_schema = str(rows[0].get("target_schema", "")).strip() or schema_path.lstrip("/") or "-"
+    target_object = str(rows[0].get("target_object", "")).strip() or object_path.lstrip("/") or "-"
     source_schema = target_schema
     source_object = target_object
 
