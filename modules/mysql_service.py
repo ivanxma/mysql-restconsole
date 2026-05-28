@@ -159,6 +159,105 @@ def _run_connector_sql(
         connection.close()
 
 
+_MYSQLSH_REST_PATTERNS = (
+    re.compile(r"^SHOW\s+(?:CREATE\s+)?REST\b", re.IGNORECASE),
+    re.compile(r"^CREATE\s+(?:OR\s+REPLACE\s+)?REST\b", re.IGNORECASE),
+    re.compile(r"^ALTER\s+REST\b", re.IGNORECASE),
+    re.compile(r"^DROP\s+REST\b", re.IGNORECASE),
+)
+
+
+def _strip_leading_sql_comments(statement: str) -> str:
+    remaining = statement.lstrip()
+    while remaining:
+        if remaining.startswith("--") or remaining.startswith("#"):
+            _, separator, tail = remaining.partition("\n")
+            if not separator:
+                return ""
+            remaining = tail.lstrip()
+            continue
+        if remaining.startswith("/*"):
+            end_index = remaining.find("*/")
+            if end_index < 0:
+                return ""
+            remaining = remaining[end_index + 2 :].lstrip()
+            continue
+        return remaining
+    return remaining
+
+
+def _requires_mysqlsh(sql: str) -> bool:
+    for statement in _split_sql_statements(sql):
+        cleaned = _strip_leading_sql_comments(statement)
+        if any(pattern.match(cleaned) for pattern in _MYSQLSH_REST_PATTERNS):
+            return True
+    return False
+
+
+def _run_mysqlsh_subprocess(
+    sql: str,
+    *,
+    username: str,
+    password: str,
+    raw_output: bool = False,
+) -> list[dict[str, Any]] | str:
+    cmd = [
+        CONFIG.mysqlsh_path,
+        "--sql",
+        mysqlsh_uri(username, password),
+        "--execute",
+        sql,
+    ]
+    if not raw_output:
+        cmd.insert(2, "--result-format=json")
+
+    completed = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        timeout=max(get_runtime_config().connect_timeout * 4, 12),
+        check=False,
+    )
+
+    combined_stderr = (completed.stderr or "").strip()
+    stdout = (completed.stdout or "").strip()
+    if completed.returncode != 0:
+        stderr_lines = [
+            line.strip()
+            for line in combined_stderr.splitlines()
+            if line.strip()
+            and not line.strip().startswith("WARNING:")
+            and "Using a password on the command line interface can be insecure." not in line
+        ]
+        stdout_lines = [
+            line.strip()
+            for line in stdout.splitlines()
+            if line.strip()
+            and not line.strip().startswith("WARNING:")
+            and "Using a password on the command line interface can be insecure." not in line
+        ]
+        detail = "\n".join(stderr_lines) or "\n".join(stdout_lines) or "mysqlsh execution failed"
+        raise RuntimeError(detail)
+
+    if raw_output:
+        return stdout
+
+    rows: list[dict[str, Any]] = []
+    buffer: list[str] = []
+    depth = 0
+    for line in stdout.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("WARNING:") or stripped.startswith("Using a password"):
+            continue
+        depth += stripped.count("{")
+        depth -= stripped.count("}")
+        buffer.append(stripped)
+        if depth == 0 and buffer:
+            rows.append(json.loads(" ".join(buffer)))
+            buffer = []
+    return rows
+
+
 def _manage_tunnel(action: str, runtime_config) -> None:
     profile = {
         "use_ssh_tunnel": runtime_config.host == "127.0.0.1" and runtime_config.api_host == "127.0.0.1",
@@ -224,66 +323,13 @@ def run_mysqlsh(
     password: str,
     raw_output: bool = False,
 ) -> list[dict[str, Any]] | str:
+    if _requires_mysqlsh(sql):
+        return _run_mysqlsh_subprocess(sql, username=username, password=password, raw_output=raw_output)
+
     try:
         return _run_connector_sql(sql, username=username, password=password, raw_output=raw_output)
     except mysql.connector.Error as exc:
         raise RuntimeError(str(exc)) from exc
-
-    cmd = [
-        CONFIG.mysqlsh_path,
-        "--sql",
-        mysqlsh_uri(username, password),
-        "--execute",
-        sql,
-    ]
-    if not raw_output:
-        cmd.insert(2, "--result-format=json")
-
-    completed = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        timeout=max(get_runtime_config().connect_timeout * 4, 12),
-        check=False,
-    )
-
-    combined_stderr = (completed.stderr or "").strip()
-    stdout = (completed.stdout or "").strip()
-    if completed.returncode != 0:
-        stderr_lines = [
-            line.strip()
-            for line in combined_stderr.splitlines()
-            if line.strip()
-            and not line.strip().startswith("WARNING:")
-            and "Using a password on the command line interface can be insecure." not in line
-        ]
-        stdout_lines = [
-            line.strip()
-            for line in stdout.splitlines()
-            if line.strip()
-            and not line.strip().startswith("WARNING:")
-            and "Using a password on the command line interface can be insecure." not in line
-        ]
-        detail = "\n".join(stderr_lines) or "\n".join(stdout_lines) or "mysqlsh execution failed"
-        raise RuntimeError(detail)
-
-    if raw_output:
-        return stdout
-
-    rows: list[dict[str, Any]] = []
-    buffer: list[str] = []
-    depth = 0
-    for line in stdout.splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("WARNING:") or stripped.startswith("Using a password"):
-            continue
-        depth += stripped.count("{")
-        depth -= stripped.count("}")
-        buffer.append(stripped)
-        if depth == 0 and buffer:
-            rows.append(json.loads(" ".join(buffer)))
-            buffer = []
-    return rows
 
 
 def run_admin_sql(sql: str, *, raw_output: bool = False) -> list[dict[str, Any]] | str:
