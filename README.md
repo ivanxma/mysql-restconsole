@@ -40,6 +40,8 @@ export MRS_WEBAPP_PORT=443
 export LOCAL_MYSQL_ADMIN_PASSWORD='temporary-password-for-first-setup'
 # Optional: required when setup must download an embedded MySQL Server tarball.
 export MRS_CONSOLE_MYSQL_SERVER_URL_LINUX_X86='https://dev.mysql.com/get/Downloads/MySQL-9.7/mysql-9.7.0-linux-glibc2.28-x86_64.tar.xz'
+# Optional: override embedded MySQL Shell 9.7+ download URL.
+export MRS_CONSOLE_MYSQL_SHELL_URL_LINUX_X86='https://dev.mysql.com/get/Downloads/MySQL-Shell/mysql-shell-9.7.0-linux-glibc2.28-x86-64bit.tar.gz'
 ```
 
 ## Run

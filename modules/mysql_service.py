@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import json
 import re
+import shutil
 import socket
 import subprocess
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 import mysql.connector
 
@@ -77,6 +80,21 @@ def _connector_kwargs(username: str, password: str) -> dict[str, Any]:
         "autocommit": True,
         "connection_timeout": runtime_config.connect_timeout,
     }
+
+
+def mysqlsh_uri(username: str, password: str) -> str:
+    from flask import has_request_context, session
+
+    if has_request_context():
+        profile = session.get("connection_profile", {})
+        if profile.get("mode") == "socket":
+            socket_path = str(profile.get("socket", "")).strip()
+            if not socket_path.startswith("/"):
+                socket_path = str((Path(__file__).resolve().parent.parent / socket_path).resolve())
+            return f"mysql://{quote(username)}:{quote(password)}@localhost?socket={quote(socket_path, safe='')}"
+
+    runtime_config = get_runtime_config()
+    return f"mysql://{quote(username)}:{quote(password)}@{runtime_config.host}:{runtime_config.port}"
 
 
 def _split_sql_statements(sql: str) -> list[str]:
@@ -178,6 +196,94 @@ def _requires_mrs_sql_extensions(sql: str) -> bool:
     return False
 
 
+def _resolve_mysqlsh_path() -> str:
+    configured_path = str(CONFIG.mysqlsh_path or "").strip()
+    if configured_path and "/" in configured_path:
+        if Path(configured_path).is_file():
+            return configured_path
+        raise RuntimeError(
+            f"MySQL Shell was configured as {configured_path}, but that file does not exist. "
+            "Install MySQL Shell or set MRS_WEBAPP_MYSQLSH to the correct absolute path."
+        )
+
+    resolved = shutil.which(configured_path or "mysqlsh")
+    if resolved:
+        return resolved
+
+    for candidate in ("/usr/bin/mysqlsh", "/usr/local/bin/mysqlsh", "/opt/mysql/mysql-shell/bin/mysqlsh"):
+        if Path(candidate).is_file():
+            return candidate
+
+    raise RuntimeError(
+        "MySQL Shell executable 'mysqlsh' was not found. The REST Admin create/expose actions use MySQL Shell "
+        "MRS SQL extensions, matching codexmrs/webapp/mysql_admin.py. Install MySQL Shell or set MRS_WEBAPP_MYSQLSH."
+    )
+
+
+def _run_mrs_sql_extensions(
+    sql: str,
+    *,
+    username: str,
+    password: str,
+    raw_output: bool = False,
+) -> list[dict[str, Any]] | str:
+    cmd = [
+        _resolve_mysqlsh_path(),
+        "--sql",
+        mysqlsh_uri(username, password),
+        "--execute",
+        sql,
+    ]
+    if not raw_output:
+        cmd.insert(2, "--result-format=json")
+
+    completed = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        timeout=max(get_runtime_config().connect_timeout * 4, 12),
+        check=False,
+    )
+
+    combined_stderr = (completed.stderr or "").strip()
+    stdout = (completed.stdout or "").strip()
+    if completed.returncode != 0:
+        stderr_lines = [
+            line.strip()
+            for line in combined_stderr.splitlines()
+            if line.strip()
+            and not line.strip().startswith("WARNING:")
+            and "Using a password on the command line interface can be insecure." not in line
+        ]
+        stdout_lines = [
+            line.strip()
+            for line in stdout.splitlines()
+            if line.strip()
+            and not line.strip().startswith("WARNING:")
+            and "Using a password on the command line interface can be insecure." not in line
+        ]
+        detail = "\n".join(stderr_lines) or "\n".join(stdout_lines) or "mysqlsh execution failed"
+        raise RuntimeError(detail)
+
+    if raw_output:
+        return stdout
+
+    rows: list[dict[str, Any]] = []
+    buffer: list[str] = []
+    depth = 0
+    for line in stdout.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("WARNING:") or stripped.startswith("Using a password"):
+            continue
+        depth += stripped.count("{")
+        depth -= stripped.count("}")
+        buffer.append(stripped)
+        if depth == 0 and buffer:
+            rows.append(json.loads(" ".join(buffer)))
+            buffer = []
+    return rows
+
+
 def _manage_tunnel(action: str, runtime_config) -> None:
     profile = {
         "use_ssh_tunnel": runtime_config.host == "127.0.0.1" and runtime_config.api_host == "127.0.0.1",
@@ -244,11 +350,7 @@ def run_profile_sql(
     raw_output: bool = False,
 ) -> list[dict[str, Any]] | str:
     if _requires_mrs_sql_extensions(sql):
-        raise RuntimeError(
-            "MRS DDL actions are not available from this deployment. "
-            "The application can read and test existing MySQL REST Service metadata through the active profile, "
-            "but creating or changing REST services requires the MySQL REST Service SQL extensions."
-        )
+        return _run_mrs_sql_extensions(sql, username=username, password=password, raw_output=raw_output)
 
     try:
         return _run_connector_sql(sql, username=username, password=password, raw_output=raw_output)

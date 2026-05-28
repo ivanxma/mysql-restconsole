@@ -23,6 +23,10 @@ LOCAL_MYSQL_SOCKET="${LOCAL_MYSQL_SOCKET:-${APP_DIR}/.data/run/mysql.sock}"
 LOCAL_MYSQL_DATABASE="${LOCAL_MYSQL_DATABASE:-mysql}"
 MYSQL_SERVER_VERSION="${MRS_CONSOLE_MYSQL_SERVER_VERSION:-9.7.0}"
 MYSQL_SERVER_URL_LINUX_X86="${MRS_CONSOLE_MYSQL_SERVER_URL_LINUX_X86:-}"
+MYSQL_SHELL_VERSION="${MRS_CONSOLE_MYSQL_SHELL_VERSION:-9.7.0}"
+MYSQL_SHELL_MIN_VERSION="${MRS_CONSOLE_MYSQL_SHELL_MIN_VERSION:-9.7.0}"
+MYSQL_SHELL_URL_LINUX_X86="${MRS_CONSOLE_MYSQL_SHELL_URL_LINUX_X86:-https://dev.mysql.com/get/Downloads/MySQL-Shell/mysql-shell-${MYSQL_SHELL_VERSION}-linux-glibc2.28-x86-64bit.tar.gz}"
+MYSQLSH_BIN="${MRS_WEBAPP_MYSQLSH:-${APP_DIR}/.embedded/mysql-shell/current/bin/mysqlsh}"
 CONFIGDB_NAME="${MRS_CONSOLE_CONFIGDB_NAME:-configdb}"
 CONFIGDB_USER="${MRS_CONSOLE_CONFIGDB_USER:-mysql_rest_console_config}"
 CONFIGDB_PASSWORD="${MRS_CONSOLE_CONFIGDB_PASSWORD:-}"
@@ -49,7 +53,7 @@ install_ol9_prereqs() {
   [[ "$SKIP_PRIVILEGED_SETUP" == "1" ]] && return
   if command -v sudo >/dev/null 2>&1; then
     sudo dnf install -y git curl xz libaio openssl python3.12 python3.12-pip python3.12-devel firewalld
-    sudo dnf install -y ncurses-compat-libs mysql-shell || true
+    sudo dnf install -y ncurses-compat-libs || true
   fi
 }
 
@@ -105,6 +109,7 @@ MRS_CONSOLE_CONFIGDB_USER=${CONFIGDB_USER}
 MRS_CONSOLE_CONFIGDB_PASSWORD=${CONFIGDB_PASSWORD}
 MRS_CONSOLE_CONFIGDB_SOCKET=${LOCAL_MYSQL_SOCKET}
 LOCAL_MYSQL_SOCKET=${LOCAL_MYSQL_SOCKET}
+MRS_WEBAPP_MYSQLSH=${MYSQLSH_BIN}
 EOF
   chmod 600 "${APP_DIR}/.runtime.env" || true
 }
@@ -132,6 +137,46 @@ install_python_deps() {
   "$selected_python" -m venv "$VENV_DIR"
   "${VENV_DIR}/bin/python" -m pip install --upgrade pip
   "${VENV_DIR}/bin/python" -m pip install -r "${APP_DIR}/requirements.txt"
+}
+
+version_ge() {
+  [[ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -n 1)" == "$2" ]]
+}
+
+mysqlsh_version() {
+  "$1" --version 2>/dev/null | grep -Eo '[0-9]+([.][0-9]+){1,2}' | head -n 1
+}
+
+ensure_embedded_mysql_shell() {
+  mkdir -p "${APP_DIR}/.embedded/mysql-shell"
+  if [[ ! -x "$MYSQLSH_BIN" ]]; then
+    if [[ -x "${APP_DIR}/.embedded/mysql-shell/current/bin/mysqlsh" ]]; then
+      MYSQLSH_BIN="${APP_DIR}/.embedded/mysql-shell/current/bin/mysqlsh"
+    else
+      local archive="${APP_DIR}/.embedded/mysql-shell/mysql-shell-${MYSQL_SHELL_VERSION}.tar.gz"
+      curl -L --fail -o "$archive" "$MYSQL_SHELL_URL_LINUX_X86"
+      tar -xzf "$archive" -C "${APP_DIR}/.embedded/mysql-shell"
+      local extracted
+      extracted="$(find "${APP_DIR}/.embedded/mysql-shell" -maxdepth 1 -type d -name 'mysql-shell-*' | sort | tail -n 1)"
+      if [[ -z "$extracted" || ! -x "${extracted}/bin/mysqlsh" ]]; then
+        echo "Embedded MySQL Shell archive did not contain bin/mysqlsh." >&2
+        exit 1
+      fi
+      ln -sfn "$extracted" "${APP_DIR}/.embedded/mysql-shell/current"
+      MYSQLSH_BIN="${APP_DIR}/.embedded/mysql-shell/current/bin/mysqlsh"
+    fi
+  fi
+
+  local installed_version
+  installed_version="$(mysqlsh_version "$MYSQLSH_BIN")"
+  if [[ -z "$installed_version" ]]; then
+    echo "Unable to determine MySQL Shell version from $MYSQLSH_BIN." >&2
+    exit 1
+  fi
+  if ! version_ge "$installed_version" "$MYSQL_SHELL_MIN_VERSION"; then
+    echo "MySQL Shell $installed_version is too old; version ${MYSQL_SHELL_MIN_VERSION}+ is required." >&2
+    exit 1
+  fi
 }
 
 setup_local_admin_profile_only() {
@@ -274,6 +319,7 @@ fi
 selected_python="$(select_python)"
 install_python_deps "$selected_python"
 ensure_tls_assets
+ensure_embedded_mysql_shell
 write_runtime_env
 bootstrap_embedded_mysql
 chmod 700 .ssh-tunnels 2>/dev/null || true

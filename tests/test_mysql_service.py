@@ -57,35 +57,38 @@ class MysqlServiceTests(unittest.TestCase):
         self.assertNotIn("SHOW REST", captured_sql[0].upper())
 
     def test_rest_ddl_is_rejected_without_subprocess(self) -> None:
-        with self.assertRaisesRegex(RuntimeError, "MRS DDL actions are not available"):
+        with patch("modules.mysql_service._run_mrs_sql_extensions", return_value=""):
             run_admin_ddl("CREATE OR REPLACE REST SERVICE /london PUBLISHED")
 
-    def test_create_rest_service_action_is_rejected_without_subprocess(self) -> None:
-        with self.assertRaisesRegex(RuntimeError, "MRS DDL actions are not available"):
+    def test_create_rest_service_action_uses_mrs_extensions(self) -> None:
+        with patch("modules.mysql_service._run_mrs_sql_extensions", return_value="") as runner:
             create_rest_service_path_definition(service_name="London")
+        self.assertIn("CREATE OR REPLACE REST SERVICE", runner.call_args.args[0])
 
-    def test_expose_database_action_is_rejected_without_subprocess(self) -> None:
-        with self.assertRaisesRegex(RuntimeError, "MRS DDL actions are not available"):
+    def test_expose_database_action_uses_mrs_extensions(self) -> None:
+        with patch("modules.mysql_service._run_mrs_sql_extensions", return_value="") as runner:
             expose_database_to_service_definition(
                 service_path="/london",
                 source_schema="employees",
                 auth_required=False,
             )
+        self.assertIn("CREATE OR REPLACE REST SCHEMA", runner.call_args.args[0])
 
-    def test_expose_table_action_is_rejected_without_subprocess(self) -> None:
+    def test_expose_table_action_uses_mrs_extensions(self) -> None:
         with patch(
             "modules.mysql_service.list_table_columns",
             return_value=[{"column_name": "id", "column_key": "PRI"}],
-        ), self.assertRaisesRegex(RuntimeError, "MRS DDL actions are not available"):
+        ), patch("modules.mysql_service._run_mrs_sql_extensions", return_value="") as runner:
             create_rest_service_definition(
                 service_path="/london",
                 source_schema="employees",
                 source_table="departments",
                 auth_required=False,
             )
+        self.assertIn("CREATE OR REPLACE REST VIEW", runner.call_args.args[0])
 
-    def test_create_rest_procedure_action_is_rejected_without_subprocess(self) -> None:
-        with self.assertRaisesRegex(RuntimeError, "MRS DDL actions are not available"):
+    def test_create_rest_procedure_action_uses_mrs_extensions(self) -> None:
+        with patch("modules.mysql_service._run_mrs_sql_extensions", return_value="") as runner:
             create_rest_procedure_definition(
                 procedure_name="department_lookup",
                 service_path="/london",
@@ -93,17 +96,19 @@ class MysqlServiceTests(unittest.TestCase):
                 parameters=[],
                 body_sql="SELECT 1",
             )
+        self.assertIn("CREATE OR REPLACE REST PROCEDURE", runner.call_args.args[0])
 
-    def test_expose_sys_procedure_action_is_rejected_without_subprocess(self) -> None:
-        with patch("modules.mysql_service.list_procedure_parameters", return_value=[]), self.assertRaisesRegex(
-            RuntimeError, "MRS DDL actions are not available"
-        ):
+    def test_expose_sys_procedure_action_uses_mrs_extensions(self) -> None:
+        with patch("modules.mysql_service.list_procedure_parameters", return_value=[]), patch(
+            "modules.mysql_service._run_mrs_sql_extensions", return_value=""
+        ) as runner:
             expose_existing_schema_procedure(
                 source_schema="sys",
                 procedure_name="ps_setup_enable_thread",
                 service_path="/london",
                 auth_required=False,
             )
+        self.assertIn("CREATE OR REPLACE REST PROCEDURE", runner.call_args.args[0])
 
 
 if __name__ == "__main__":
