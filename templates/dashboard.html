@@ -1310,6 +1310,7 @@
               data-auth-required="{{ service_item.auth_required }}"
               data-auth-app="{{ service_item.auth_app_name }}"
               data-auth-path="{{ service_item.auth_path }}"
+              data-endpoint-url="{{ service_item.endpoint_url }}"
               data-param-names="{{ (service_item.param_names or []) | join(',') }}"
               data-procedure-params='{{ service_item.procedure_params | tojson }}'
             >{{ service_item.endpoint }}</a>
@@ -1991,6 +1992,83 @@
       return pre;
     }
 
+    function shellQuote(value) {
+      return `'${String(value == null ? "" : value).replaceAll("'", "'\"'\"'")}'`;
+    }
+
+    function scriptSlug(value) {
+      return String(value || "rest-test").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "rest-test";
+    }
+
+    function buildRequestUrl(endpointPath, queryString) {
+      const baseUrl = new URL(endpointTemplate.dataset.endpointUrl || endpointPath, window.location.href);
+      baseUrl.pathname = endpointPath;
+      baseUrl.search = queryString ? queryString.replace(/^\?/, "") : "";
+      return baseUrl.toString();
+    }
+
+    function buildCurlScript(result, requestContext) {
+      const slug = scriptSlug(requestContext.servicePath || requestContext.endpointPath);
+      const requestUrl = buildRequestUrl(result.endpoint || requestContext.endpointPath, result.query_string || requestContext.queryString || "");
+      const responseFile = `/tmp/mysql-restconsole-${slug}-response.out`;
+      const headerFile = `/tmp/mysql-restconsole-${slug}-headers.out`;
+      const tokenFile = `/tmp/mysql-restconsole-${slug}-token.json`;
+      const cookieJar = `/tmp/mysql-restconsole-${slug}-cookies.txt`;
+      const lines = [
+        "#!/usr/bin/env bash",
+        "set -euo pipefail",
+        "",
+        `RESPONSE_FILE=${shellQuote(responseFile)}`,
+        `HEADER_FILE=${shellQuote(headerFile)}`,
+        `COOKIE_JAR=${shellQuote(cookieJar)}`,
+      ];
+
+      if (requestContext.authRequired) {
+        const authPathValue = requestContext.authPath || "/authentication";
+        const normalizedAuthPath = authPathValue.startsWith("/") ? authPathValue : `/${authPathValue}`;
+        const serviceBase = new URL(requestContext.endpointUrl || requestUrl, window.location.href);
+        const loginPath = `${requestContext.servicePath}${normalizedAuthPath}/login`.replaceAll("//", "/");
+        serviceBase.pathname = loginPath;
+        serviceBase.search = "";
+        const authPayload = {
+          username: requestContext.authUsername,
+          password: requestContext.authPassword,
+          authApp: requestContext.authApp || "MySQL",
+          sessionType: "bearer",
+        };
+        lines.push(
+          `TOKEN_FILE=${shellQuote(tokenFile)}`,
+          `LOGIN_URL=${shellQuote(serviceBase.toString())}`,
+          `AUTH_PAYLOAD=${shellQuote(JSON.stringify(authPayload))}`,
+          "",
+          'curl -skS -X POST "$LOGIN_URL" \\',
+          '  -H "Content-Type: application/json" \\',
+          '  -c "$COOKIE_JAR" -b "$COOKIE_JAR" \\',
+          '  -d "$AUTH_PAYLOAD" \\',
+          '  -o "$TOKEN_FILE"',
+          'ACCESS_TOKEN=$(python3 -c \'import json,sys; print(json.load(open(sys.argv[1])).get("accessToken",""))\' "$TOKEN_FILE")',
+          'if [ -z "$ACCESS_TOKEN" ]; then',
+          '  echo "Authentication did not return accessToken. See $TOKEN_FILE" >&2',
+          "  exit 1",
+          "fi"
+        );
+      }
+
+      lines.push("", `REQUEST_URL=${shellQuote(requestUrl)}`);
+      if (result.request_method === "POST") {
+        lines.push(`REQUEST_PAYLOAD=${shellQuote(JSON.stringify(result.request_payload || {}))}`);
+      }
+      lines.push("", "curl -skS \\");
+      if (result.request_method === "POST") {
+        lines.push('  -X POST \\', '  -H "Content-Type: application/json" \\', '  -d "$REQUEST_PAYLOAD" \\');
+      }
+      if (requestContext.authRequired) {
+        lines.push('  -H "Authorization: Bearer $ACCESS_TOKEN" \\', '  -b "$COOKIE_JAR" \\');
+      }
+      lines.push('  -D "$HEADER_FILE" \\', '  -o "$RESPONSE_FILE" \\', '  "$REQUEST_URL"', "", 'cat "$RESPONSE_FILE"');
+      return lines.join("\n");
+    }
+
     function renderResultSets(resultSets) {
       for (const [index, resultSet] of resultSets.entries()) {
         const rows = resultSet.items || resultSet.rows || [];
@@ -2070,6 +2148,7 @@
         return;
       }
       endpointTemplate.value = button.dataset.endpointTemplate || "";
+      endpointTemplate.dataset.endpointUrl = button.dataset.endpointUrl || button.href || "";
       servicePath.value = button.dataset.servicePath || "";
       objectKind.value = button.dataset.objectKind || "VIEW";
       authRequired.value = button.dataset.authRequired || "Not Required";
@@ -2139,6 +2218,17 @@
         }
       }
       const queryString = formData.get("query_string") || "";
+      const requestContext = {
+        endpointPath: endpointTemplate.value,
+        endpointUrl: endpointTemplate.dataset.endpointUrl || "",
+        servicePath: servicePath.value,
+        queryString,
+        authRequired: (authRequired.value || "") === "Required",
+        authPath: authPath.value || "/authentication",
+        authApp: authApp.value || "MySQL",
+        authUsername: formData.get("auth_username") || "",
+        authPassword: formData.get("auth_password") || "",
+      };
       const requestPath = `${endpointTemplate.value}${queryString ? `?${queryString}` : ""}`;
       requestSummary.textContent = objectKind.value === "PROCEDURE"
         ? `POST ${endpointTemplate.value}`
@@ -2182,6 +2272,7 @@
         }
         clearResultTabs();
         addResultTab("Summary", renderSummaryTab(result));
+        addResultTab("curl Script", renderRawOutput(buildCurlScript(result, requestContext)));
         if (result.out_parameters && Object.keys(result.out_parameters).length > 0) {
           addResultTab("OUT Parameters", renderKeyValueGrid(result.out_parameters));
         }
