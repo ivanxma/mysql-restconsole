@@ -185,21 +185,25 @@
 {% elif active_slug == "profile-login" %}
 <section class="panel form-panel">
   <div class="panel-head"><div><h4>Second-Level Profile Login</h4><p class="panel-copy">Choose an assigned profile, then authenticate to that target MySQL/MRS environment.</p></div></div>
-  <form class="stack-form" action="{{ url_for('profile_login') }}" method="post">
-    <div class="form-grid">
-      <label class="field">
-        <span>Profile</span>
-        <select name="profile_name" required>
-          {% for profile_item in config_profiles %}
-          <option value="{{ profile_item.name }}">{{ profile_item.label }}</option>
-          {% else %}
-          <option value="" disabled>No assigned profiles</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label class="field"><span>DB Username</span><input type="text" name="db_username" autocomplete="username" required></label>
-      <label class="field"><span>DB Password</span><input type="password" name="db_password" autocomplete="current-password" required></label>
-    </div>
+  <form class="stack-form profile-login-form" action="{{ url_for('profile_login') }}" method="post">
+    <label class="field">
+      <span>Profile</span>
+      <select name="profile_name" required>
+        {% for profile_item in config_profiles %}
+        <option value="{{ profile_item.name }}">{{ profile_item.label }}</option>
+        {% else %}
+        <option value="" disabled>No assigned profiles</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="field">
+      <span>DB Username</span>
+      <input type="text" name="db_username" autocomplete="username" required>
+    </label>
+    <label class="field">
+      <span>DB Password</span>
+      <input type="password" name="db_password" autocomplete="current-password" required>
+    </label>
     <button class="primary-button" type="submit" {% if not config_profiles %}disabled{% endif %}>Connect Profile</button>
   </form>
 </section>
