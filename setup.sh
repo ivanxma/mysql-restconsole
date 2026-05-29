@@ -54,7 +54,10 @@ install_ol9_prereqs() {
   [[ "$SKIP_PRIVILEGED_SETUP" == "1" ]] && return
   if command -v sudo >/dev/null 2>&1; then
     sudo dnf install -y git curl xz libaio openssl python3.12 python3.12-pip python3.12-devel firewalld
-    sudo dnf install -y ncurses-compat-libs || true
+    if ! sudo dnf -q list --installed ncurses-compat-libs >/dev/null 2>&1 \
+      && sudo dnf -q list --available ncurses-compat-libs >/dev/null 2>&1; then
+      sudo dnf install -y ncurses-compat-libs
+    fi
   fi
 }
 
