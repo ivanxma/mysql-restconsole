@@ -29,7 +29,6 @@ ROLE_MENUS = {
                 {"slug": "user", "label": "User"},
                 {"slug": "granting-privileges", "label": "Granting Privileges"},
                 {"slug": "restapidb", "label": "RestAPIDB"},
-                {"slug": "list-restful-services", "label": "List Restful Services"},
                 {"slug": "create-restful-service", "label": "Create Restful Service"},
                 {"slug": "expose-db-as-service", "label": "Expose DB as Service"},
                 {"slug": "expose-table-as-service", "label": "Expose Table as Service"},
@@ -48,7 +47,6 @@ ROLE_MENUS = {
                 {"slug": "user", "label": "User"},
                 {"slug": "granting-privileges", "label": "Granting Privileges"},
                 {"slug": "restapidb", "label": "RestAPIDB"},
-                {"slug": "list-restful-services", "label": "List Restful Services"},
                 {"slug": "create-restful-service", "label": "Create Restful Service"},
                 {"slug": "expose-db-as-service", "label": "Expose DB as Service"},
                 {"slug": "expose-table-as-service", "label": "Expose Table as Service"},
@@ -62,7 +60,7 @@ ROLE_MENUS = {
             "label": "RestAPI",
             "children": [
                 {"slug": "dashboard", "label": "Dashboard"},
-                {"slug": "list-restful-services", "label": "List Restful Services"},
+                {"slug": "restapidb", "label": "RestAPIDB"},
                 {"slug": "create-restful-service", "label": "Create Restful Service"},
                 {"slug": "expose-db-as-service", "label": "Expose DB as Service"},
                 {"slug": "expose-table-as-service", "label": "Expose Table as Service"},
@@ -76,7 +74,7 @@ ROLE_MENUS = {
             "label": "RestAPI",
             "children": [
                 {"slug": "dashboard", "label": "Dashboard"},
-                {"slug": "list-restful-services", "label": "List Restful Services"},
+                {"slug": "restapidb", "label": "RestAPIDB"},
                 {"slug": "show-grants", "label": "Show Grants"},
             ],
         },
@@ -209,15 +207,6 @@ PAGE_CONTENT = {
             "Log in through the service authentication endpoint and request a bearer token.",
             "Call the protected REST path with Authorization: Bearer.",
             "Verify count, hasMore, and next links for client compatibility.",
-        ],
-    },
-    "list-restful-services": {
-        "title": "List Restful Services",
-        "summary": "Inspect available REST services and execute test calls directly through the local forwarded ports.",
-        "items": [
-            "Check whether each service has auth apps attached.",
-            "Confirm whether the endpoint requires authentication before testing it.",
-            "Use the Test button to execute public or authenticated REST requests.",
         ],
     },
     "show-grants": {

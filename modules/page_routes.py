@@ -86,7 +86,6 @@ def _can_manage_profile_database(user: dict[str, Any] | None) -> bool:
 
 
 REST_API_PAGE_SLUGS = {
-    "list-restful-services",
     "create-restful-service",
     "expose-db-as-service",
     "expose-table-as-service",
@@ -1392,7 +1391,6 @@ def register_routes(app: Flask) -> None:
                 "user",
                 "granting-privileges",
                 "restapidb",
-                "list-restful-services",
                 "create-restful-service",
                 "expose-db-as-service",
                 "expose-table-as-service",
@@ -1448,8 +1446,7 @@ def register_routes(app: Flask) -> None:
                     context=context,
                 )
 
-        if user["role"] in {"admin", "db_admin", "rest_admin", "test_user"} and slug == "list-restful-services":
-            context["subtabs"] = []
+        if user["role"] in {"rest_admin", "test_user"} and slug == "restapidb":
             try:
                 context["rest_services"] = list_restapidb_services()
             except Exception as exc:
