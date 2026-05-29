@@ -69,6 +69,8 @@ def _connector_kwargs(username: str, password: str) -> dict[str, Any]:
                 "password": password,
                 "autocommit": True,
                 "connection_timeout": get_runtime_config().connect_timeout,
+                "read_timeout": max(get_runtime_config().connect_timeout * 3, 15),
+                "write_timeout": max(get_runtime_config().connect_timeout * 3, 15),
             }
 
     runtime_config = get_runtime_config()
@@ -79,6 +81,8 @@ def _connector_kwargs(username: str, password: str) -> dict[str, Any]:
         "password": password,
         "autocommit": True,
         "connection_timeout": runtime_config.connect_timeout,
+        "read_timeout": max(runtime_config.connect_timeout * 3, 15),
+        "write_timeout": max(runtime_config.connect_timeout * 3, 15),
     }
 
 
@@ -528,6 +532,39 @@ def non_system_users() -> list[dict[str, Any]]:
     return [user for user in list_users_with_roles() if not user["system"]]
 
 
+def grant_target_users() -> list[dict[str, Any]]:
+    cache_key = "users:grant-targets"
+    cached = get_cached_value(cache_key)
+    if cached is not None:
+        return cached
+
+    rows = run_admin_sql(
+        """
+        SELECT
+            User AS username,
+            Host AS host
+        FROM mysql.user
+        ORDER BY User, Host
+        """
+    )
+    users: list[dict[str, Any]] = []
+    for row in rows:
+        username = str(row["username"])
+        host = str(row["host"])
+        if is_system_user(username):
+            continue
+        users.append(
+            {
+                "username": username,
+                "host": host,
+                "role_name": "",
+                "system": False,
+                "key": f"{username}@{host}",
+            }
+        )
+    return set_cached_value(cache_key, users)
+
+
 def list_databases() -> list[str]:
     cache_key = "dbs:list"
     cached = get_cached_value(cache_key)
@@ -674,24 +711,52 @@ def list_mysql_admin_privileges() -> list[dict[str, str]]:
     if cached is not None:
         return cached
 
-    rows = run_admin_sql("SHOW PRIVILEGES")
-    privileges: list[dict[str, str]] = []
-    for row in rows:
-        lowered = {str(key).lower(): str(value) for key, value in row.items()}
-        privilege_name = lowered.get("privilege", "")
-        context = lowered.get("context", "")
-        comment = lowered.get("comment", "")
-        if not privilege_name or "server admin" not in context.lower():
-            continue
-        privileges.append(
-            {
-                "value": f"priv:{privilege_name}",
-                "name": privilege_name,
-                "context": context,
-                "comment": comment,
-            }
-        )
-    privileges.sort(key=lambda item: item["name"])
+    privilege_names = [
+        "APPLICATION_PASSWORD_ADMIN",
+        "AUDIT_ABORT_EXEMPT",
+        "AUDIT_ADMIN",
+        "AUTHENTICATION_POLICY_ADMIN",
+        "BACKUP_ADMIN",
+        "BINLOG_ADMIN",
+        "BINLOG_ENCRYPTION_ADMIN",
+        "CLONE_ADMIN",
+        "CONNECTION_ADMIN",
+        "CREATE USER",
+        "ENCRYPTION_KEY_ADMIN",
+        "FLUSH_OPTIMIZER_COSTS",
+        "FLUSH_STATUS",
+        "FLUSH_TABLES",
+        "FLUSH_USER_RESOURCES",
+        "GROUP_REPLICATION_ADMIN",
+        "INNODB_REDO_LOG_ARCHIVE",
+        "INNODB_REDO_LOG_ENABLE",
+        "PASSWORDLESS_USER_ADMIN",
+        "PERSIST_RO_VARIABLES_ADMIN",
+        "REPLICATION_APPLIER",
+        "REPLICATION_SLAVE_ADMIN",
+        "RESOURCE_GROUP_ADMIN",
+        "ROLE_ADMIN",
+        "SENSITIVE_VARIABLES_OBSERVER",
+        "SERVICE_CONNECTION_ADMIN",
+        "SESSION_VARIABLES_ADMIN",
+        "SET_ANY_DEFINER",
+        "SHOW_ROUTINE",
+        "SYSTEM_USER",
+        "SYSTEM_VARIABLES_ADMIN",
+        "TABLE_ENCRYPTION_ADMIN",
+        "TELEMETRY_LOG_ADMIN",
+        "VERSION_TOKEN_ADMIN",
+        "XA_RECOVER_ADMIN",
+    ]
+    privileges = [
+        {
+            "value": f"priv:{privilege_name}",
+            "name": privilege_name,
+            "context": "Server administration",
+            "comment": "Administrative privilege grantable by supported MySQL deployments when available.",
+        }
+        for privilege_name in privilege_names
+    ]
     return set_cached_value(cache_key, privileges)
 
 

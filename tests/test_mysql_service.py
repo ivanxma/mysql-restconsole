@@ -8,6 +8,8 @@ from modules.mysql_service import (
     create_rest_service_path_definition,
     expose_database_to_service_definition,
     expose_existing_schema_procedure,
+    grant_target_users,
+    list_mysql_admin_privileges,
     list_rest_service_paths,
     run_admin_ddl,
 )
@@ -137,6 +139,34 @@ class MysqlServiceTests(unittest.TestCase):
                 auth_required=False,
             )
         self.assertIn("CREATE OR REPLACE REST PROCEDURE", runner.call_args.args[0])
+
+    def test_mysql_admin_privileges_use_static_catalog(self) -> None:
+        with patch("modules.mysql_service.get_cached_value", return_value=None), patch(
+            "modules.mysql_service.set_cached_value", side_effect=lambda _key, value: value
+        ), patch("modules.mysql_service.run_admin_sql") as runner:
+            privileges = list_mysql_admin_privileges()
+
+        runner.assert_not_called()
+        names = {item["name"] for item in privileges}
+        self.assertIn("CREATE USER", names)
+        self.assertIn("ROLE_ADMIN", names)
+        self.assertIn("SYSTEM_USER", names)
+
+    def test_grant_target_users_uses_lightweight_user_list(self) -> None:
+        with patch("modules.mysql_service.get_cached_value", return_value=None), patch(
+            "modules.mysql_service.set_cached_value", side_effect=lambda _key, value: value
+        ), patch(
+            "modules.mysql_service.run_admin_sql",
+            return_value=[
+                {"username": "mysql.sys", "host": "localhost"},
+                {"username": "appuser", "host": "%"},
+            ],
+        ) as runner:
+            users = grant_target_users()
+
+        self.assertEqual([user["key"] for user in users], ["appuser@%"])
+        self.assertIn("FROM mysql.user", runner.call_args.args[0])
+        self.assertNotIn("role_edges", runner.call_args.args[0])
 
 
 if __name__ == "__main__":

@@ -51,6 +51,7 @@ from modules.services import (
     find_restapidb_service,
     get_rest_procedure_details,
     get_rest_service_auth_details,
+    grant_target_users,
     grant_object_privileges,
     grant_special_privileges,
     is_system_user,
@@ -63,7 +64,6 @@ from modules.services import (
     list_special_privileges,
     list_tables,
     list_users_with_roles,
-    non_system_users,
     run_admin_connector_sql,
     run_admin_sql,
     special_privilege_categories,
@@ -368,13 +368,13 @@ def _dashboard_context_for_admin(slug: str) -> dict[str, Any]:
                 tables = list_tables(selected_db)
             else:
                 selected_db = ""
-            managed_users = non_system_users()
+            managed_users = grant_target_users()
         elif active_tab == "special-priv":
             valid_categories = {item["slug"] for item in special_privilege_categories()}
             if special_priv_category not in valid_categories:
                 special_priv_category = default_special_priv_category()
             special_privileges = list_special_privileges(special_priv_category)
-            managed_users = non_system_users()
+            managed_users = grant_target_users()
 
     if slug == "restapidb":
         if active_tab not in {tab["slug"] for tab in RESTAPIDB_TABS}:
