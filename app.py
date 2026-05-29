@@ -14,6 +14,9 @@ from modules.session_store import current_user
 def create_app() -> Flask:
     app = Flask(__name__)
     app.config["SECRET_KEY"] = CONFIG.secret_key
+    app.config["SESSION_COOKIE_HTTPONLY"] = True
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+    app.config["SESSION_COOKIE_SECURE"] = os.getenv("MRS_WEBAPP_SESSION_COOKIE_SECURE", "0") == "1"
 
     @app.context_processor
     def inject_template_context() -> dict[str, Any]:

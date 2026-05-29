@@ -61,7 +61,7 @@ Then open `https://<host>/login`.
 
 ## Oracle Linux 9 on OCI Compute
 
-This repository includes a rerunnable `setup.sh` path for Oracle Linux 9. The short OCI Compute init script below clones or refreshes the app, runs setup as the `opc` user, and starts the HTTPS systemd service on port `443`.
+This repository includes a rerunnable `setup.sh` path for Oracle Linux 9. The short OCI Compute init script below clones or refreshes the app and runs setup as the `opc` user. `setup.sh` owns Python setup, embedded MySQL Shell, embedded socket-only MySQL/configdb setup, TLS generation, firewall opening, systemd unit installation, and service start.
 
 Create the instance with these OCI values:
 
@@ -72,24 +72,17 @@ Create the instance with these OCI values:
 - Ingress rule: allow TCP `443` from your client network, or your chosen `HTTPS_PORT`
 - Initialization script: paste the OL9 script in `Advanced options` > `Management` > `Initialization script`
 
-Set `APP_REPO_URL` to the Git repository URL for this app before launching the instance.
+Set `APP_REPO_URL` to the Git repository URL for this app before launching the instance. If the embedded MySQL Server tarball URL is not reachable from the instance, pass `MRS_CONSOLE_MYSQL_SERVER_URL_LINUX_X86` as instance metadata or bake it into the init script environment.
 
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_SLUG="mysql-rest-console"
 APP_REPO_URL="https://github.com/ivanxma/mysql-restconsole.git"
 APP_BRANCH="main"
 APP_USER="opc"
+APP_SLUG="mysql-rest-console"
 APP_DIR="/home/${APP_USER}/${APP_SLUG}"
-STATE_DIR="/var/lib/${APP_SLUG}-init"
-INIT_LOG="/var/log/${APP_SLUG}-init.log"
-
-mkdir -p "${STATE_DIR}"
-echo installing > "${STATE_DIR}/state"
-exec > >(tee -a "${INIT_LOG}") 2>&1
-trap 'echo failed > "${STATE_DIR}/state"' ERR
 
 dnf install -y git sudo
 if [[ -d "${APP_DIR}/.git" ]]; then
@@ -99,7 +92,6 @@ else
   sudo -u "${APP_USER}" git clone --branch "${APP_BRANCH}" "${APP_REPO_URL}" "${APP_DIR}"
 fi
 
-chown -R "${APP_USER}:${APP_USER}" "${APP_DIR}"
 sudo -u "${APP_USER}" env \
   APP_HOST="0.0.0.0" \
   HTTPS_PORT="443" \
@@ -110,9 +102,6 @@ sudo -u "${APP_USER}" env \
   LOCAL_MYSQL_ADMIN_PASSWORD="${LOCAL_MYSQL_ADMIN_PASSWORD:-}" \
   MRS_CONSOLE_MYSQL_SERVER_URL_LINUX_X86="${MRS_CONSOLE_MYSQL_SERVER_URL_LINUX_X86:-}" \
   "${APP_DIR}/setup.sh" ol9 https
-
-systemctl enable --now mysql-rest-console-https.service
-echo installed > "${STATE_DIR}/state"
 ```
 
 When `MRS_CONSOLE_MYSQL_SERVER_URL_LINUX_X86` is supplied, setup initializes the embedded socket-only MySQL store and creates `configdb`. `LOCAL_MYSQL_ADMIN_PASSWORD` defaults to `localadmin` for bootstrap and should be changed immediately through first-login password rotation.
@@ -122,11 +111,35 @@ Verification on Oracle Linux 9:
 ```bash
 ssh opc@<public-ip>
 sudo systemctl status mysql-rest-console-https.service
-sudo tail -n 100 /var/log/mysql-rest-console-init.log
+cd /home/opc/mysql-rest-console
+.venv/bin/python -m unittest discover -s tests
+.venv/bin/python -m compileall app.py modules mysql_rest_console_update_worker.py
 curl -sk -I https://<public-ip>/login
 ```
 
 If you rerun the init script, it refreshes an existing Git checkout with `git fetch --all --prune` and `git pull --ff-only` instead of replacing it. Runtime files remain owned by `opc`.
+
+## Validation Checklist
+
+Before promoting a deployment, run:
+
+```bash
+python3 -m unittest discover -s tests
+python3 -m compileall app.py modules mysql_rest_console_update_worker.py
+python3 -c "from app import app; [app.jinja_env.get_template(name) for name in app.jinja_env.list_templates()]; print('templates parsed')"
+bash -n setup.sh secured_connection_profile_setup.sh start_http.sh start_https.sh
+git diff --check
+```
+
+Security and logic checks:
+
+- Login page is centered and uses stacked form labels/inputs for username and password.
+- Local login is first-level authentication; general users then perform second-level profile login.
+- Admin-only routes stay behind role checks, including profile, user, group, update, and REST administration pages.
+- Profile passwords are entered at second-level login and are not stored in `configdb`, `.runtime.env`, or browser-visible state.
+- Generated curl scripts mask credentials and prompt or read `REST_USERNAME` / `REST_PASSWORD` at runtime.
+- Runtime state, TLS keys, embedded downloads, profiles, SSH keys, tokens, and audit output remain ignored by git.
+- Run `python -m pip_audit -r requirements.txt` from the active virtualenv when network access is available.
 
 ## Auto-Update
 

@@ -242,6 +242,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  min-height: 100vh;
   padding: 40px;
 }
 
@@ -484,11 +485,12 @@ body {
 }
 
 .login-stage {
-  width: min(1240px, 100%);
+  width: min(980px, 100%);
   display: grid;
-  grid-template-columns: minmax(320px, 1.05fr) minmax(420px, 0.95fr);
+  grid-template-columns: minmax(300px, 1fr) minmax(360px, 420px);
   gap: 26px;
-  align-items: stretch;
+  align-items: center;
+  margin: auto;
 }
 
 .login-intro {
@@ -562,14 +564,15 @@ body {
   display: flex;
   flex-direction: column;
   gap: 18px;
+  width: 100%;
   background: var(--surface-strong);
 }
 
 .login-workspace {
   display: grid;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: auto;
   gap: 22px;
-  align-self: stretch;
+  align-self: center;
 }
 
 .login-card-head h3,

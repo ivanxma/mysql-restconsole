@@ -30,6 +30,7 @@ MYSQLSH_BIN="${MRS_WEBAPP_MYSQLSH:-${APP_DIR}/.embedded/mysql-shell/current/bin/
 CONFIGDB_NAME="${MRS_CONSOLE_CONFIGDB_NAME:-configdb}"
 CONFIGDB_USER="${MRS_CONSOLE_CONFIGDB_USER:-mysql_rest_console_config}"
 CONFIGDB_PASSWORD="${MRS_CONSOLE_CONFIGDB_PASSWORD:-}"
+MRS_WEBAPP_SECRET_KEY="${MRS_WEBAPP_SECRET_KEY:-}"
 
 detect_os_family() {
   if [[ "$(uname -s)" == "Darwin" ]]; then
@@ -78,6 +79,12 @@ existing_runtime_value() {
 }
 
 write_runtime_env() {
+  if [[ -z "$MRS_WEBAPP_SECRET_KEY" ]]; then
+    MRS_WEBAPP_SECRET_KEY="$(existing_runtime_value MRS_WEBAPP_SECRET_KEY)"
+  fi
+  if [[ -z "$MRS_WEBAPP_SECRET_KEY" ]]; then
+    MRS_WEBAPP_SECRET_KEY="$(openssl rand -hex 32)"
+  fi
   if [[ -z "$CONFIGDB_PASSWORD" ]]; then
     CONFIGDB_PASSWORD="$(existing_runtime_value MRS_CONSOLE_CONFIGDB_PASSWORD)"
   fi
@@ -110,6 +117,8 @@ MRS_CONSOLE_CONFIGDB_PASSWORD=${CONFIGDB_PASSWORD}
 MRS_CONSOLE_CONFIGDB_SOCKET=${LOCAL_MYSQL_SOCKET}
 LOCAL_MYSQL_SOCKET=${LOCAL_MYSQL_SOCKET}
 MRS_WEBAPP_MYSQLSH=${MYSQLSH_BIN}
+MRS_WEBAPP_SECRET_KEY=${MRS_WEBAPP_SECRET_KEY}
+MRS_WEBAPP_SESSION_COOKIE_SECURE=$(if [[ "$saved_deploy_mode" == "https" || "$saved_deploy_mode" == "both" ]]; then printf '1'; else printf '0'; fi)
 EOF
   chmod 600 "${APP_DIR}/.runtime.env" || true
 }
@@ -304,6 +313,23 @@ open_ol9_firewall() {
   sudo firewall-cmd --reload || true
 }
 
+enable_selected_services() {
+  [[ "$SKIP_PRIVILEGED_SETUP" == "1" ]] && return
+  command -v sudo >/dev/null 2>&1 || return
+  case "$DEPLOY_MODE" in
+    http)
+      sudo systemctl enable --now "${APP_SLUG}-http.service" || true
+      ;;
+    https)
+      sudo systemctl enable --now "${APP_SLUG}-https.service" || true
+      ;;
+    both)
+      sudo systemctl enable --now "${APP_SLUG}-http.service" "${APP_SLUG}-https.service" || true
+      ;;
+    none) ;;
+  esac
+}
+
 if [[ -z "$OS_FAMILY" ]]; then
   OS_FAMILY="$(detect_os_family)"
 fi
@@ -343,5 +369,7 @@ case "$DEPLOY_MODE" in
   none) ;;
   *) echo "Deploy mode must be http, https, both, or none." >&2; exit 1 ;;
 esac
+
+enable_selected_services
 
 echo "Setup completed for ${OS_FAMILY} (${DEPLOY_MODE})."
