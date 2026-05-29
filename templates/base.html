@@ -18,60 +18,129 @@
             <h2>{{ page.title if page is defined else "MySQL REST Console" }}</h2>
           </div>
         </div>
-        <details class="account-menu">
-          <summary class="account-trigger" aria-label="Open user menu">
-            <span class="avatar avatar-user" aria-hidden="true"></span>
-            <span class="sr-only">Open user menu</span>
-          </summary>
-          <div class="account-popover">
-            <div class="account-head">
-              <span class="avatar avatar-small avatar-user" aria-hidden="true"></span>
+        <div class="user-menu" data-user-menu>
+          <button class="user-menu-button" type="button" aria-label="User settings" aria-expanded="false" data-user-menu-button>
+            <svg aria-hidden="true" viewBox="0 0 24 24">
+              <circle cx="12" cy="8" r="4"></circle>
+              <path d="M4 21a8 8 0 0 1 16 0"></path>
+            </svg>
+          </button>
+          <div class="user-menu-panel" data-user-menu-panel hidden>
+            <dl class="user-menu-details">
               <div>
-                <strong>{{ current_user.username }}</strong>
-                <span>{{ current_role_label }}</span>
+                <dt>User</dt>
+                <dd>{{ current_user.username }}</dd>
               </div>
+              <div>
+                <dt>Role</dt>
+                <dd>{{ current_role_label }}</dd>
+              </div>
+              <div>
+                <dt>Profile</dt>
+                <dd>{{ active_connection_profile.label or 'No DB profile connected' }}</dd>
+              </div>
+              <div>
+                <dt>Connection</dt>
+                <dd>{{ active_connection_profile.name or '-' }}{% if active_connection_profile.db_username %} / {{ active_connection_profile.db_username }}{% endif %}</dd>
+              </div>
+            </dl>
+            <div class="user-menu-actions">
+              <form action="{{ url_for('logout') }}" method="post">
+                <button class="ghost-button account-logout" type="submit">Logout</button>
+              </form>
             </div>
-            <div class="account-profile">
-              <span>Connection Profile</span>
-              <strong>{{ active_connection_profile.label or 'No DB profile connected' }}</strong>
-              {% if active_connection_profile.name %}
-              <small>{{ active_connection_profile.name }}{% if active_connection_profile.db_username %} &middot; {{ active_connection_profile.db_username }}{% endif %}</small>
-              {% endif %}
-            </div>
-            <form action="{{ url_for('logout') }}" method="post">
-              <button class="ghost-button account-logout" type="submit">Logout</button>
-            </form>
           </div>
-        </details>
+        </div>
       </header>
       {% if current_menu %}
-      <nav class="menu">
+      <nav class="nav-groups">
         {% for item in current_menu %}
         {% if item.children is defined %}
-        <details class="menu-group {% if item.children | selectattr('slug', 'equalto', active_slug) | list %}is-active{% endif %}">
-          <summary class="menu-group-label">{{ item.label }}</summary>
-          <div class="menu-group-links">
+        {% set group_id = "nav-group-" ~ loop.index %}
+        <section class="nav-group {% if item.children | selectattr('slug', 'equalto', active_slug) | list %}has-active{% endif %}" data-nav-group>
+          <button
+            class="nav-group-toggle"
+            type="button"
+            aria-expanded="false"
+            aria-controls="{{ group_id }}"
+            data-nav-toggle
+          >
+            <span class="nav-group-title">{{ item.label }}</span>
+            <span class="nav-group-caret" aria-hidden="true"></span>
+          </button>
+          <div class="nav-links" id="{{ group_id }}" data-nav-links hidden>
             {% for child in item.children %}
-            <a class="menu-link {% if active_slug == child.slug %}is-active{% endif %}" href="{{ url_for('dashboard', slug=child.slug) }}">{{ child.label }}</a>
+            <a class="nav-link {% if active_slug == child.slug %}active{% endif %}" href="{{ url_for('dashboard', slug=child.slug) }}">{{ child.label }}</a>
             {% endfor %}
           </div>
-        </details>
+        </section>
         {% else %}
-        <a class="menu-link {% if active_slug == item.slug %}is-active{% endif %}" href="{{ url_for('dashboard', slug=item.slug) }}">{{ item.label }}</a>
+        <a class="nav-link nav-link-standalone {% if active_slug == item.slug %}active{% endif %}" href="{{ url_for('dashboard', slug=item.slug) }}">{{ item.label }}</a>
         {% endif %}
         {% endfor %}
       </nav>
       <script>
         (() => {
-          const groups = document.querySelectorAll(".menu-group");
-          for (const group of groups) {
-            group.addEventListener("toggle", () => {
-              if (!group.open) return;
-              for (const other of groups) {
-                if (other !== group) other.open = false;
+          const groups = Array.from(document.querySelectorAll("[data-nav-group]"));
+          const storageKey = "mrs-console-open-nav-group";
+          if (groups.length) {
+            const setOpenGroup = (groupToOpen) => {
+              groups.forEach((group) => {
+                const button = group.querySelector("[data-nav-toggle]");
+                const links = group.querySelector("[data-nav-links]");
+                const isOpen = group === groupToOpen;
+                group.classList.toggle("open", isOpen);
+                if (button) {
+                  button.setAttribute("aria-expanded", isOpen ? "true" : "false");
+                }
+                if (links) {
+                  links.hidden = !isOpen;
+                }
+              });
+              if (!groupToOpen) {
+                window.sessionStorage.removeItem(storageKey);
+                return;
               }
+              const links = groupToOpen.querySelector("[data-nav-links]");
+              if (links && links.id) {
+                window.sessionStorage.setItem(storageKey, links.id);
+              }
+            };
+            const savedId = window.sessionStorage.getItem(storageKey);
+            const initialGroup = groups.find((group) => {
+              const links = group.querySelector("[data-nav-links]");
+              return links && links.id === savedId;
+            }) || groups.find((group) => group.querySelector(".nav-link.active")) || null;
+            setOpenGroup(initialGroup);
+            groups.forEach((group) => {
+              const button = group.querySelector("[data-nav-toggle]");
+              if (!button) return;
+              button.addEventListener("click", () => {
+                setOpenGroup(group.classList.contains("open") ? null : group);
+              });
             });
           }
+        })();
+        (() => {
+          const menu = document.querySelector("[data-user-menu]");
+          if (!menu) return;
+          const button = menu.querySelector("[data-user-menu-button]");
+          const panel = menu.querySelector("[data-user-menu-panel]");
+          const setOpen = (isOpen) => {
+            panel.hidden = !isOpen;
+            button.setAttribute("aria-expanded", isOpen ? "true" : "false");
+            menu.classList.toggle("open", isOpen);
+          };
+          button.addEventListener("click", (event) => {
+            event.stopPropagation();
+            setOpen(panel.hidden);
+          });
+          document.addEventListener("click", (event) => {
+            if (!menu.contains(event.target)) setOpen(false);
+          });
+          document.addEventListener("keydown", (event) => {
+            if (event.key === "Escape") setOpen(false);
+          });
         })();
       </script>
       {% endif %}
